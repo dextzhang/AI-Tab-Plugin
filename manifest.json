@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "AI2tab",
+  "version": "2.0.0",
+  "description": "在一个弹窗里把消息同步发送到多个 AI 模型网页。",
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://chat.openai.com/*",
+    "*://chatgpt.com/*",
+    "*://gemini.google.com/*",
+    "*://x.ai/*",
+    "*://*.x.ai/*",
+    "*://grok.com/*",
+    "*://*.grok.com/*",
+    "*://x.com/*",
+    "*://*.x.com/*",
+    "*://tongyi.aliyun.com/*",
+    "*://*.tongyi.aliyun.com/*",
+    "*://qianwen.aliyun.com/*",
+    "*://*.qianwen.aliyun.com/*",
+    "*://qianwen.com/*",
+    "*://*.qianwen.com/*",
+    "*://qwen.ai/*",
+    "*://*.qwen.ai/*",
+    "*://doubao.com/*",
+    "*://*.doubao.com/*",
+    "*://kimi.moonshot.cn/*",
+    "*://kimi.com/*",
+    "*://*.kimi.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

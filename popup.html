@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>AI2tab</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 480px;
+      max-height: 620px;
+      margin: 0;
+      padding: 14px;
+      overflow-y: auto;
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+      color: #1f2937;
+      background: #f6f7f9;
+    }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: 18px;
+      line-height: 1.3;
+    }
+
+    .subtitle {
+      margin: 0 0 12px;
+      color: #6b7280;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .tab-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 12px;
+      padding: 4px;
+      border: 1px solid #d8dee8;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .tab {
+      min-height: 34px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      color: #4b5563;
+      font-size: 13px;
+      text-align: center;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .tab.active {
+      color: #fff;
+      background: #2563eb;
+      font-weight: 700;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    textarea,
+    select {
+      width: 100%;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #fff;
+      color: #111827;
+      font-family: inherit;
+      font-size: 14px;
+      outline: none;
+    }
+
+    textarea:focus,
+    select:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+
+    textarea {
+      height: 118px;
+      padding: 10px;
+      resize: vertical;
+    }
+
+    label {
+      display: block;
+      margin: 0 0 6px;
+      color: #374151;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .field {
+      margin-bottom: 10px;
+    }
+
+    select {
+      height: 36px;
+      padding: 7px 9px;
+    }
+
+    button {
+      min-height: 36px;
+      padding: 8px 12px;
+      border: 0;
+      border-radius: 6px;
+      background: #2563eb;
+      color: white;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background-color 0.15s, opacity 0.15s;
+    }
+
+    button:hover {
+      background: #1d4ed8;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    button.full {
+      width: 100%;
+    }
+
+    button.secondary {
+      background: #6b7280;
+    }
+
+    button.secondary:hover {
+      background: #4b5563;
+    }
+
+    .status {
+      min-height: 18px;
+      margin-top: 10px;
+      white-space: pre-wrap;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #4b5563;
+    }
+
+    .panel {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid #d8dee8;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .panel-header button {
+      min-height: 28px;
+      padding: 5px 9px;
+      font-size: 12px;
+    }
+
+    .history-item,
+    .log-item {
+      margin-bottom: 8px;
+      padding: 9px;
+      border: 1px solid #d8dee8;
+      border-radius: 6px;
+      background: #fff;
+      font-size: 12px;
+    }
+
+    .history-item {
+      cursor: pointer;
+    }
+
+    .history-item:hover {
+      border-color: #93c5fd;
+      background: #eff6ff;
+    }
+
+    .history-content,
+    .log-content {
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      line-height: 1.45;
+    }
+
+    .muted {
+      margin-top: 5px;
+      color: #6b7280;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .log-item.success {
+      border-left: 4px solid #16a34a;
+    }
+
+    .log-item.error {
+      border-left: 4px solid #dc2626;
+    }
+
+    .log-item.partial {
+      border-left: 4px solid #f59e0b;
+    }
+
+    .log-summary {
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
+    .log-detail {
+      margin-top: 5px;
+      white-space: pre-wrap;
+      color: #374151;
+      line-height: 1.45;
+    }
+
+    .empty {
+      padding: 14px;
+      color: #9ca3af;
+      font-size: 12px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>AI2tab</h1>
+  <p class="subtitle">把同一条提示词发送到多个已打开的 AI 页面。弹窗失焦会自动关闭，发送结果会保存在下方。</p>
+
+  <div class="tab-container" role="tablist">
+    <div class="tab active" data-tab="chat" role="tab">文本</div>
+    <div class="tab" data-tab="image" role="tab">图片</div>
+  </div>
+
+  <section class="tab-content active" id="chat-tab">
+    <div class="field">
+      <label for="message">提示词</label>
+      <textarea id="message" placeholder="输入要发送到多个 AI 页面的内容"></textarea>
+    </div>
+    <button id="sendBtn" class="full">发送文本</button>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">最近提示词</div>
+        <button id="clearHistoryBtn" class="secondary">清空</button>
+      </div>
+      <div id="historyList"></div>
+    </div>
+  </section>
+
+  <section class="tab-content" id="image-tab">
+    <div class="field">
+      <label for="imagePrompt">图片提示词</label>
+      <textarea id="imagePrompt" placeholder="描述你想生成的图片"></textarea>
+    </div>
+    <div class="field">
+      <label for="imageSize">图片尺寸</label>
+      <select id="imageSize">
+        <option value="1024x1024">1024 x 1024</option>
+        <option value="1024x1536">1024 x 1536</option>
+        <option value="1536x1024">1536 x 1024</option>
+      </select>
+    </div>
+    <button id="generateImageBtn" class="full">发送图片请求</button>
+  </section>
+
+  <div id="status" class="status" aria-live="polite"></div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">发送日志</div>
+      <button id="clearLogsBtn" class="secondary">清空日志</button>
+    </div>
+    <div id="sendLogList"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
