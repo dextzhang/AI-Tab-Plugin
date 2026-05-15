@@ -214,7 +214,7 @@ window.TabPluginUtils = (function() {
     const siteName = element.dataset.ai2tabSite || '';
     element.focus();
 
-    if (siteName === '通义千问') {
+    if (siteName === '千问/Qwen') {
       if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
         setTextControlValue(element, '');
         setTextControlValue(element, value);

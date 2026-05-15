@@ -1,9 +1,10 @@
 (function() {
   const U = window.TabPluginUtils;
-  const CONTENT_VERSION = '2.0.0';
+  const SITE = window.AI2TAB_SITE_CONFIG;
+  const CONTENT_VERSION = '3.0.0';
 
-  if (!U) {
-    console.error('[AI2tab] utils.js is required before content.js');
+  if (!U || !SITE) {
+    console.error('[AI2tab] ai-sites.js and utils.js are required before content.js');
     return;
   }
 
@@ -14,331 +15,16 @@
 
   window.__AI2TAB_CONTENT_VERSION__ = CONTENT_VERSION;
 
-  const COMMON_SEND_TEXT = ['发送', 'Send', 'Submit'];
-
-  function hostMatches(hostname, domains) {
-    return domains.some(domain => hostname === domain || hostname.endsWith(`.${domain}`));
-  }
-
-  function pathStartsWith(pathname, prefixes) {
-    return prefixes.some(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`));
-  }
-
-  const AI_PLATFORMS = {
-    chatgpt: {
-      name: 'ChatGPT',
-      patterns: ['chatgpt.com', 'chat.openai.com'],
-      selectors: {
-        newChat: [
-          'a[data-testid="create-new-chat-button"]',
-          'button[data-testid="create-new-chat-button"]',
-          'nav a[href="/"]',
-          'a[aria-label*="New chat"]',
-        ],
-        input: [
-          '#prompt-textarea',
-          'div[contenteditable="true"][id="prompt-textarea"]',
-          'textarea[placeholder*="Message"]',
-          'textarea',
-        ],
-        send: [
-          'button[data-testid="send-button"]',
-          'button[aria-label*="Send"]',
-          'button[aria-label*="发送"]',
-        ],
-        imageMode: [
-          'button[aria-label*="生图"]',
-          'button[aria-label*="图像"]',
-          'button[aria-label*="图片"]',
-          'div[role="button"][aria-label*="生图"]',
-          'div[role="button"][aria-label*="图像"]',
-          'div[role="button"][aria-label*="图片"]',
-        ],
-      },
-      newChatText: ['New chat', '新聊天', '新对话'],
-      delayAfterNewChat: 1400,
-    },
-
-    gemini: {
-      name: 'Gemini',
-      patterns: ['gemini.google.com'],
-      selectors: {
-        newChat: [
-          'a[data-test-id="new-chat"]',
-          'button[data-test-id="new-chat"]',
-          'a[href="/app"]',
-        ],
-        input: [
-          '.ql-editor[contenteditable="true"]',
-          'div[contenteditable="true"][role="textbox"]',
-          'div[contenteditable="true"]',
-          'textarea',
-        ],
-        send: [
-          'button[aria-label="Send message"]',
-          'button[aria-label*="Send"]',
-          'button[data-test-id="send-button"]',
-        ],
-      },
-      newChatText: ['New chat', '新聊天'],
-      delayAfterNewChat: 1600,
-      useCtrlEnter: true,
-    },
-
-    grok: {
-      name: 'Grok',
-      match: location => {
-        if (hostMatches(location.hostname, ['grok.com', 'x.ai'])) return true;
-        return hostMatches(location.hostname, ['x.com']) && pathStartsWith(location.pathname, ['/i/grok', '/grok']);
-      },
-      selectors: {
-        newChat: [
-          'a[href="/chat"]',
-          'button[data-testid="new-chat"]',
-          'a[aria-label*="New"]',
-        ],
-        input: [
-          'textarea[placeholder*="Ask"]',
-          'textarea[placeholder*="Message"]',
-          'textarea[placeholder*="Describe"]',
-          'div.tiptap.ProseMirror',
-          '.ProseMirror[contenteditable="true"]',
-          'div[contenteditable="true"]',
-          'textarea',
-        ],
-        send: [
-          'button[aria-label="Send"]',
-          'button[aria-label*="Send"]',
-          'button[data-testid="send-button"]',
-        ],
-      },
-      newChatText: ['New chat', 'New conversation', '新对话'],
-      modeText: ['Expert', 'Think', 'DeepSearch'],
-      delayAfterNewChat: 1600,
-      skipNewChatForImage: true,
-      requireVerifyForImage: true,
-    },
-
-    tongyi: {
-      name: '通义千问',
-      patterns: ['tongyi.aliyun.com', 'qianwen.aliyun.com', 'qianwen.com', 'qwen.ai'],
-      selectors: {
-        newChat: [
-          'button[data-testid="new-chat"]',
-          'div[data-testid="new-chat"]',
-        ],
-        input: [
-          'textarea.message-input-textarea',
-          'textarea[data-testid="chat-input"]',
-          'textarea[placeholder*="输入"]',
-          'textarea[placeholder*="问"]',
-          'textarea[placeholder*="帮"]',
-          '[contenteditable="true"][role="textbox"]',
-          'div[role="textbox"][contenteditable="true"]',
-          'div[contenteditable="true"]',
-          'textarea',
-        ],
-        send: [
-          'div.omni-button-content button.ant-btn-primary',
-          'div.omni-button-content button',
-          'button.ant-btn-primary',
-          'button[data-testid="chat-send"]',
-          'button[aria-label*="发送"]',
-        ],
-      },
-      newChatText: ['新建对话', '新对话', '开启新对话', '新建'],
-      modeText: ['深度思考', '思考'],
-      delayAfterNewChat: 1800,
-      imageModeText: ['AI生图', 'AI 生图', '图像生成', '图片生成', '生成图片', '文生图', '画图'],
-      requireVerifyForImage: true,
-      clearAndWriteBeforeSubmit: true,
-    },
-
-    doubao: {
-      name: '豆包',
-      patterns: ['doubao.com', 'www.doubao.com'],
-      selectors: {
-        newChat: [
-          'div[data-testid="new_chat_button"]',
-          'button[data-testid="new_chat_button"]',
-        ],
-        input: [
-          'textarea[data-testid="chat_input_input"]',
-          '[data-testid="chat_input_input"] textarea',
-          '[data-testid="chat_input_input"] [contenteditable="true"]',
-          'textarea[placeholder*="输入"]',
-          'textarea[placeholder*="发送"]',
-          'textarea[placeholder*="豆包"]',
-          '[contenteditable="true"][role="textbox"]',
-          '.ProseMirror[contenteditable="true"]',
-          'div[contenteditable="true"]',
-          'textarea',
-        ],
-        send: [
-          'button[data-testid="chat_input_send_button"]',
-          'div[data-testid="chat_input_send_button"]',
-          '[data-testid="chat_input_send_button"] button',
-          'button[class*="send"]',
-          'div[class*="send"][role="button"]',
-          'button[aria-label*="发送"]',
-        ],
-        imageMode: [
-          'button[aria-label*="生图"]',
-          'button[aria-label*="图像"]',
-          'button[aria-label*="图片"]',
-          'div[role="button"][aria-label*="生图"]',
-          'div[role="button"][aria-label*="图像"]',
-          'div[role="button"][aria-label*="图片"]',
-          '[data-testid*="image"]',
-        ],
-      },
-      newChatText: ['新建对话', '新对话', '开启新对话'],
-      modeText: ['专家模型', '专家'],
-      delayAfterNewChat: 1800,
-      imageModeText: ['AI生图', 'AI 生图', '图像生成', '图片生成', '生成图片', '文生图', '画图'],
-      requireVerifyForImage: true,
-    },
-
-    kimi: {
-      name: 'Kimi',
-      patterns: ['kimi.moonshot.cn', 'kimi.com'],
-      selectors: {
-        newChat: [
-          'button[data-testid="new-chat"]',
-          'button[data-testid="new_chat"]',
-          'button[title*="新建"]',
-          'button[title*="新对话"]',
-          'button[aria-label*="新建"]',
-          'button[aria-label*="新对话"]',
-          'button[aria-label*="发起"]',
-          'button[aria-label*="New"]',
-          'a[title*="新建"]',
-          'a[title*="新对话"]',
-          'a[aria-label*="新建"]',
-          'a[aria-label*="新对话"]',
-          'a[aria-label*="New"]',
-          'a[href="/chat"]',
-        ],
-        input: [
-          '[data-lexical-editor="true"]',
-          '[data-testid="chat-input"] [contenteditable="true"]',
-          'div[contenteditable="true"][class*="editor"]',
-          'div[contenteditable="true"][role="textbox"]',
-          '.ProseMirror[contenteditable="true"]',
-          'div[contenteditable="true"]',
-          'textarea',
-        ],
-        send: [
-          'button[data-testid="send-button"]',
-          'button[aria-label*="发送"]',
-        ],
-      },
-      newChatText: ['发起新对话', '新建对话', '新对话', '新建', 'New chat'],
-      modeText: ['思考', 'K1', 'k1'],
-      delayAfterNewChat: 1800,
-      requireVerifyForImage: true,
-      clearAndWriteBeforeSubmit: true,
-      requireFreshChat: true,
-    },
-  };
-
   function detectPlatform() {
-    const url = window.location.href;
-    return Object.values(AI_PLATFORMS).find(platform =>
-      platform.match ? platform.match(window.location) : platform.patterns.some(pattern => url.includes(pattern))
-    ) || null;
+    return SITE.getSiteByUrl(window.location.href);
   }
 
-  function isExistingKimiConversation() {
-    if (!hostMatches(window.location.hostname, ['kimi.moonshot.cn', 'kimi.com'])) return false;
-    const route = `${window.location.pathname || ''}${window.location.hash || ''}`;
-    return /(^|[#/])(chat|c)\/[^/?#]+/.test(route);
+  function getVisibleByText(selector, texts) {
+    return U.findVisibleByText(selector, texts || []);
   }
 
-  async function ensureFreshChat(platform, startedOnExistingChat) {
-    if (!platform.requireFreshChat || !startedOnExistingChat) return true;
-    if (!isExistingKimiConversation()) return true;
-    throw new Error('Kimi new chat did not activate; stopped before sending to avoid appending to an old conversation.');
-  }
-
-  async function clickNewChat(platform) {
-    const startedOnExistingChat = platform.requireFreshChat && isExistingKimiConversation();
-    const button = U.find(platform.selectors.newChat) ||
-      U.findVisibleByText('a,button,div[role="button"]', platform.newChatText);
-
-    if (!button) {
-      if (startedOnExistingChat) {
-        throw new Error('Kimi new chat button was not found; stopped before sending to avoid appending to an old conversation.');
-      }
-      if (platform.newChatUrl && window.location.href !== platform.newChatUrl) {
-        U.log(`${platform.name}: no new chat button found, navigating to new chat URL.`);
-        window.location.href = platform.newChatUrl;
-        await U.delay(platform.delayAfterNewChat + 800);
-        await ensureFreshChat(platform, startedOnExistingChat);
-        return true;
-      }
-      U.log(`${platform.name}: no new chat button found, continuing on current page.`);
-      await U.delay(600);
-      await ensureFreshChat(platform, startedOnExistingChat);
-      return true;
-    }
-
-    U.clickEl(button);
-    U.log(`${platform.name}: clicked new chat.`);
-    await U.delay(platform.delayAfterNewChat);
-    await ensureFreshChat(platform, startedOnExistingChat);
-    return true;
-  }
-
-  async function clickOptionalMode(platform) {
-    if (!platform.modeText?.length) return true;
-
-    const modeButton = U.findVisibleByText(
-      'button,div[role="button"],div[role="tab"],span,label',
-      platform.modeText
-    );
-
-    if (!modeButton) return true;
-
-    const active = modeButton.getAttribute('aria-checked') === 'true' ||
-      modeButton.getAttribute('aria-pressed') === 'true' ||
-      /\b(active|selected|checked)\b/i.test(modeButton.className || '');
-
-    if (!active) {
-      U.clickEl(modeButton);
-      await U.delay(700);
-      U.log(`${platform.name}: selected optional mode.`);
-    }
-
-    return true;
-  }
-
-  async function clickImageMode(platform) {
-    const selectors = platform.selectors.imageMode || [];
-    const texts = platform.imageModeText || ['AI生图', 'AI 生图', '图像生成', '图片生成', '生成图片', '文生图', '画图'];
-
-    const button = U.findVisible(selectors) ||
-      U.findVisibleByText(
-        'button,div[role="button"],div[role="tab"],span,a,label',
-        texts
-      );
-
-    if (!button) {
-      throw new Error(`${platform.name} 未找到 AI 生图/图像生成入口`);
-    }
-
-    const active = button.getAttribute('aria-selected') === 'true' ||
-      button.getAttribute('aria-pressed') === 'true' ||
-      /\b(active|selected|checked)\b/i.test(button.className || '') ||
-      Boolean(button.closest('[aria-selected="true"],[aria-pressed="true"],[class*="active"],[class*="selected"]'));
-
-    if (!active) {
-      U.clickEl(button);
-      await U.delay(1000);
-    }
-
-    U.log(`${platform.name}: image mode selected.`);
-    return true;
+  function getSitePreference(message, platform) {
+    return message.preferences?.sites?.[platform.id] || {};
   }
 
   function isDisabled(element) {
@@ -348,202 +34,416 @@
       /\b(disabled)\b/i.test(element.className || '');
   }
 
-  function scoreSendButton(button, input) {
+  function readInputValue(input) {
+    return (input?.value || input?.textContent || '').trim();
+  }
+
+  function dispatchShortcut(shortcut) {
+    if (!shortcut) return false;
+    const view = window;
+    const eventOptions = {
+      key: shortcut.key,
+      code: shortcut.code || `Key${String(shortcut.key || '').toUpperCase()}`,
+      keyCode: shortcut.keyCode || String(shortcut.key || '').toUpperCase().charCodeAt(0),
+      which: shortcut.which || String(shortcut.key || '').toUpperCase().charCodeAt(0),
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      ctrlKey: Boolean(shortcut.ctrlKey),
+      shiftKey: Boolean(shortcut.shiftKey),
+      altKey: Boolean(shortcut.altKey),
+      metaKey: Boolean(shortcut.metaKey),
+    };
+    document.dispatchEvent(new view.KeyboardEvent('keydown', eventOptions));
+    document.dispatchEvent(new view.KeyboardEvent('keyup', eventOptions));
+    return true;
+  }
+
+  function samePageFreshUrl(platform) {
+    return platform.freshUrls?.find(url => SITE.matchesSite(platform, url)) || null;
+  }
+
+  async function maybeNavigateToFreshUrl(platform) {
+    if (!platform.allowContentNavigation) return false;
+
+    const freshUrl = samePageFreshUrl(platform);
+    if (!freshUrl) return false;
+
+    const current = SITE.parseUrl(window.location.href);
+    const target = SITE.parseUrl(freshUrl);
+    if (!current || !target || current.origin !== target.origin) return false;
+
+    const currentRoute = `${current.pathname || '/'}${current.hash || ''}`;
+    const targetRoute = `${target.pathname || '/'}${target.hash || ''}`;
+    if (currentRoute === targetRoute && !platform.isExistingConversation?.(current)) return false;
+
+    window.location.href = freshUrl;
+    await U.delay(platform.delayAfterFreshChat + 900);
+    return true;
+  }
+
+  function isStillExistingConversation(platform) {
+    const parsed = SITE.parseUrl(window.location.href);
+    return Boolean(parsed && platform.isExistingConversation?.(parsed));
+  }
+
+  async function startFreshChat(platform, mode) {
+    if (mode === 'image' && platform.skipFreshChatForImage) return true;
+
+    const startedOnExisting = isStillExistingConversation(platform);
+
+    if (await maybeNavigateToFreshUrl(platform)) {
+      if (platform.requireFreshChat && isStillExistingConversation(platform)) {
+        throw new Error(`${platform.name} 未能通过 URL 进入新对话，已停止以避免追加到旧会话。`);
+      }
+      return true;
+    }
+
+    const button = U.findVisible(platform.selectors.newChat) ||
+      getVisibleByText('a,button,div[role="button"]', platform.newChatText);
+
+    if (button && !isDisabled(button)) {
+      U.clickEl(button);
+      await U.delay(platform.delayAfterFreshChat || 1200);
+      if (platform.requireFreshChat && startedOnExisting && isStillExistingConversation(platform)) {
+        throw new Error(`${platform.name} 新建对话按钮未生效，已停止以避免追加到旧会话。`);
+      }
+      return true;
+    }
+
+    if (dispatchShortcut(platform.newChatShortcut)) {
+      await U.delay(platform.delayAfterFreshChat || 1200);
+      if (platform.requireFreshChat && startedOnExisting && isStillExistingConversation(platform)) {
+        throw new Error(`${platform.name} 新建对话快捷键未生效，已停止以避免追加到旧会话。`);
+      }
+      return true;
+    }
+
+    if (platform.requireFreshChat && startedOnExisting) {
+      throw new Error(`${platform.name} 未找到可靠的新建对话入口，已停止以避免追加到旧会话。`);
+    }
+
+    U.log(`${platform.name}: no fresh-chat control found, continuing on current page.`);
+    return true;
+  }
+
+  function scoreSendButton(button, input, platform) {
     let score = 0;
     const text = `${button.textContent || ''} ${button.getAttribute('aria-label') || ''} ${button.title || ''}`;
     const rect = button.getBoundingClientRect();
     const inputRect = input.getBoundingClientRect();
+    const sendText = platform.sendText || ['Send', '发送'];
 
-    if (COMMON_SEND_TEXT.some(item => text.includes(item))) score += 10;
+    if (sendText.some(item => text.includes(item))) score += 10;
     if (/send|submit|arrow|paper|发送/i.test(button.outerHTML)) score += 6;
-    if (rect.left >= inputRect.left - 80 && rect.top >= inputRect.top - 80) score += 3;
+    if (rect.left >= inputRect.left - 120 && rect.top >= inputRect.top - 120) score += 3;
     if (!isDisabled(button)) score += 2;
     return score;
   }
 
   function findBestSendButton(platform, input) {
     const directButton = U.findVisible(platform.selectors.send);
-    if (directButton && U.isVisible(directButton)) return directButton;
+    if (directButton && !isDisabled(directButton)) return directButton;
 
-    const textButton = U.findVisibleByText('button,div[role="button"]', COMMON_SEND_TEXT);
-    if (textButton) return textButton;
+    const textButton = getVisibleByText('button,div[role="button"]', platform.sendText || ['Send', '发送']);
+    if (textButton && !isDisabled(textButton)) return textButton;
 
     const container = input.closest('form') ||
       input.closest('[role="form"]') ||
       input.closest('[class*="input"]') ||
+      input.closest('[class*="composer"]') ||
       input.parentElement;
 
-    const candidates = Array.from(U.deepQuerySelectorAll('button,div[role="button"],[data-testid*="send"],[class*="send"]', container || document))
-      .filter(button => U.isVisible(button));
+    const candidates = Array.from(U.deepQuerySelectorAll(
+      'button,div[role="button"],[data-testid*="send"],[class*="send"],[aria-label*="Send"],[aria-label*="发送"]',
+      container || document
+    )).filter(button => U.isVisible(button) && !isDisabled(button));
 
     return candidates
-      .map(button => ({ button, score: scoreSendButton(button, input) }))
+      .map(button => ({ button, score: scoreSendButton(button, input, platform) }))
       .sort((a, b) => b.score - a.score)[0]?.button || null;
   }
 
-  async function waitForEnabledSendButton(platform, input) {
-    return U.waitFor(() => {
-      const button = findBestSendButton(platform, input);
-      return button && !isDisabled(button) ? button : null;
-    }, 3000, 200);
-  }
-
-  function readInputValue(input) {
-    return (input.value || input.textContent || '').trim();
-  }
-
-  async function clearAndWriteOnce(platform, content) {
-    const input = await U.waitForVisible(() => U.findVisible(platform.selectors.input), 8000);
+  async function findInput(platform) {
+    const input = await U.waitForVisible(() => U.findVisible(platform.selectors.input), 9000, 200);
     if (!input) {
       throw new Error('未找到输入框');
     }
     input.dataset.ai2tabSite = platform.name;
-    U.clearInput(input);
-    await U.delay(120);
-    U.setInput(input, content);
-    await U.delay(500);
     return input;
   }
 
-  async function waitForSendEffect(input) {
-    return U.waitFor(() => {
-      const value = readInputValue(input);
-      const busy = document.querySelector('[aria-busy="true"],[data-loading="true"],.loading,[class*="generating"]');
-      return value.length === 0 || busy ? true : null;
-    }, 2500, 200);
+  async function writePrompt(platform, input, content) {
+    input.dataset.ai2tabSite = platform.name;
+    if (platform.clearBeforeSubmit) {
+      U.clearInput(input);
+      await U.delay(120);
+    }
+    U.setInput(input, content);
+    await U.delay(550);
+
+    const current = readInputValue(input);
+    if (!current || !current.includes(content.slice(0, Math.min(content.length, 40)))) {
+      U.clearInput(input);
+      await U.delay(120);
+      U.setInput(input, content);
+      await U.delay(550);
+    }
   }
 
-  function pressNativeEnter(input, options = {}) {
+  async function waitForSendEffect(input, timeout = 2800) {
+    return U.waitFor(() => {
+      const value = readInputValue(input);
+      const busy = document.querySelector('[aria-busy="true"],[data-loading="true"],.loading,[class*="generating"],[class*="pending"]');
+      return value.length === 0 || busy ? true : null;
+    }, timeout, 200);
+  }
+
+  function pressKey(input, keySpec = { key: 'Enter' }) {
     input.focus();
     const view = input.ownerDocument?.defaultView || window;
     const eventOptions = {
-      key: 'Enter',
-      code: 'Enter',
-      keyCode: 13,
-      which: 13,
+      key: keySpec.key || 'Enter',
+      code: keySpec.code || keySpec.key || 'Enter',
+      keyCode: keySpec.keyCode || 13,
+      which: keySpec.which || 13,
       bubbles: true,
       cancelable: true,
       composed: true,
-      ...options,
+      ctrlKey: Boolean(keySpec.ctrlKey),
+      shiftKey: Boolean(keySpec.shiftKey),
+      altKey: Boolean(keySpec.altKey),
+      metaKey: Boolean(keySpec.metaKey),
     };
     input.dispatchEvent(new view.KeyboardEvent('keydown', eventOptions));
     input.dispatchEvent(new view.KeyboardEvent('keypress', eventOptions));
     input.dispatchEvent(new view.KeyboardEvent('keyup', eventOptions));
   }
 
-  async function clickOrPressSend(platform, input, explicitButton = null, requireVerify = false, preferEnter = false) {
-    if (preferEnter) {
-      pressNativeEnter(input);
+  async function submit(platform, input, mode) {
+    const needsVerify = platform.requireSendEffect || (mode === 'image' && platform.verifySendEffectForImage);
+    const submitKeys = platform.submitKeys || [{ key: 'Enter' }];
+
+    if (platform.preferEnter) {
+      pressKey(input, submitKeys[0]);
       await U.delay(700);
-      if (await waitForSendEffect(input)) return true;
-      U.log(`${platform.name}: Enter did not clear input, trying button fallback.`);
+      if (!needsVerify || await waitForSendEffect(input)) return true;
     }
 
-    const button = explicitButton || await waitForEnabledSendButton(platform, input);
-
+    const button = await U.waitFor(() => findBestSendButton(platform, input), 3500, 200);
     if (button && !isDisabled(button)) {
       U.clickEl(button);
-      await U.delay(600);
-      if (await waitForSendEffect(input)) return true;
-      if (!requireVerify) return true;
-      U.log(`${platform.name}: button click did not clear input, trying Enter fallback.`);
+      await U.delay(700);
+      if (!needsVerify || await waitForSendEffect(input)) return true;
     }
 
-    if (platform.useCtrlEnter) {
-      U.pressCtrlEnter(input);
-    } else {
-      pressNativeEnter(input);
+    for (const keySpec of submitKeys) {
+      pressKey(input, keySpec);
+      await U.delay(700);
+      if (!needsVerify || await waitForSendEffect(input)) return true;
     }
-    await U.delay(600);
-    return requireVerify ? Boolean(await waitForSendEffect(input)) : true;
+
+    throw new Error('输入已填入，但未检测到发送成功；可能发送按钮或键盘提交被页面拦截。');
   }
 
-  async function submitQwen(platform, input) {
-    const qwenButton = await U.waitFor(() => {
-      const button = U.findVisible([
-        'div.omni-button-content button.ant-btn-primary',
-        'div.omni-button-content button',
-        'button.ant-btn-primary',
-        'button[type="submit"]',
-      ]);
-      return button && !isDisabled(button) ? button : null;
-    }, 3500, 200);
+  function getSelectedMode(platform, preference) {
+    const selected = preference.mode || platform.defaultMode || platform.modeOptions?.[0]?.value;
+    return platform.modeOptions?.find(option => option.value === selected) || null;
+  }
 
-    if (await clickOrPressSend(platform, input, qwenButton, true, true)) {
-      U.log('通义千问: Qwen submit verified.');
+  function compactText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 90);
+  }
+
+  function describeElement(element) {
+    const rect = element.getBoundingClientRect();
+    const text = compactText(element.textContent || element.value);
+    const aria = compactText(element.getAttribute('aria-label'));
+    const title = compactText(element.getAttribute('title'));
+    const testId = compactText(element.getAttribute('data-testid') || element.getAttribute('data-test-id'));
+    const role = compactText(element.getAttribute('role'));
+    const classes = compactText(element.className);
+    const signal = [text, aria, title, testId, role, classes].join(' ');
+
+    return {
+      tag: element.tagName.toLowerCase(),
+      text,
+      aria,
+      title,
+      testId,
+      role,
+      classes: classes.slice(0, 80),
+      left: Math.round(rect.left),
+      top: Math.round(rect.top),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      box: `${Math.round(rect.left)},${Math.round(rect.top)} ${Math.round(rect.width)}x${Math.round(rect.height)}`,
+      signal: compactText(signal),
+    };
+  }
+
+  function isLikelyModeControl(item, options = {}) {
+    const role = String(item.role || '').toLowerCase();
+    const testId = String(item.testId || '').toLowerCase();
+    const classes = String(item.classes || '').toLowerCase();
+    const text = String(item.text || '').trim();
+
+    if (role === 'textbox' || item.tag === 'section') return false;
+    if (/conversation|history|profile|account|side-nav|nav|sidebar/.test(testId)) return false;
+    if (/conversation|history|profile|account|side-nav|nav|sidebar/.test(classes)) return false;
+    if (!options.allowAnyPosition && item.left < 260) return false;
+    if (item.width > 420 || item.height > 90) return false;
+    if (text.length > 48) return false;
+
+    return ['button', 'select', 'option'].includes(item.tag) ||
+      ['button', 'tab', 'switch', 'checkbox', 'combobox', 'menuitem', 'option'].includes(role) ||
+      Boolean(item.aria || item.title || item.testId);
+  }
+
+  function findModeCandidate(texts, selector, options = {}) {
+    const wanted = (texts || []).filter(Boolean).map(item => String(item).toLowerCase());
+    return Array.from(U.deepQuerySelectorAll(selector))
+      .filter(element => U.isVisible(element))
+      .map(element => ({ element, info: describeElement(element) }))
+      .filter(item => isLikelyModeControl(item.info, options))
+      .find(item => wanted.some(text => item.info.signal.toLowerCase().includes(text)))?.element || null;
+  }
+
+  function isActiveControl(element) {
+    if (!element) return false;
+    if (['aria-checked', 'aria-pressed', 'aria-selected'].some(name => element.getAttribute(name) === 'true')) {
+      return true;
+    }
+    if (/\b(active|selected|checked|is-active)\b/i.test(String(element.className || ''))) {
       return true;
     }
 
-    throw new Error('通义/Qwen 输入已填入，但发送后输入框未清空；可能未触发发送按钮');
-  }
-
-  async function submitDoubao(platform, input) {
-    const doubaoButton = await U.waitFor(() => {
-      const button = U.findVisible([
-        'button[data-testid="chat_input_send_button"]',
-        '[data-testid="chat_input_send_button"] button',
-        'div[data-testid="chat_input_send_button"]',
-        'button[aria-label*="发送"]',
-        'button[type="submit"]',
-      ]);
-      return button && !isDisabled(button) ? button : null;
-    }, 3500, 200);
-
-    if (await clickOrPressSend(platform, input, doubaoButton, true, true)) {
-      U.log('豆包: Doubao submit verified.');
+    const style = window.getComputedStyle(element);
+    const color = style.color.match(/\d+/g)?.map(Number) || [];
+    if (color.length >= 3 && color[2] > color[0] + 40 && color[2] > color[1] + 20) {
       return true;
     }
 
-    throw new Error('豆包输入已填入，但发送后输入框未清空；可能未触发发送按钮');
+    return Boolean(element.closest('[aria-checked="true"],[aria-pressed="true"],[aria-selected="true"],[class*="active"],[class*="selected"]'));
   }
 
-  async function fillAndSend(platform, content, mode) {
-    if (mode === 'image' && platform.imageModeText) {
-      await clickImageMode(platform);
+  function diagnoseModeControls(platform) {
+    const keywords = [
+      'model', 'mode', 'reason', 'think', 'thinking', 'pro', 'flash', 'expert', 'beta', 'heavy', 'auto',
+      '模型', '模式', '思考', '推理', '专家', '快速', '普通', '高级', '深度', '测试', '联网', '自动',
+      ...(platform.modeOptions || []).flatMap(option => [option.label, ...(option.texts || [])]),
+    ].filter(Boolean);
+
+    const selector = [
+      'button',
+      'select',
+      'option',
+      '[role="button"]',
+      '[role="tab"]',
+      '[role="switch"]',
+      '[role="checkbox"]',
+      '[role="combobox"]',
+      '[role="menuitem"]',
+      '[aria-haspopup]',
+      '[aria-label]',
+      '[title]',
+      '[data-testid]',
+      '[data-test-id]',
+    ].join(',');
+
+    const elements = Array.from(U.deepQuerySelectorAll(selector))
+      .filter(element => U.isVisible(element))
+      .map(describeElement)
+      .filter(isLikelyModeControl)
+      .filter(item => keywords.some(keyword => item.signal.toLowerCase().includes(String(keyword).toLowerCase())))
+      .slice(0, 40);
+
+    return {
+      platform: platform.name,
+      url: window.location.href,
+      count: elements.length,
+      candidates: elements,
+    };
+  }
+
+  async function applyModePreference(platform, preference) {
+    const option = getSelectedMode(platform, preference);
+    if (!option) return true;
+
+    const targets = option.texts || [option.label];
+    const controlSelector = 'button,select,option,div[role="button"],div[role="tab"],div[role="switch"],div[role="combobox"],[aria-label],[title],[data-testid],[data-test-id]';
+
+    if (platform.modeStrategy === 'toggle') {
+      const toggle = findModeCandidate(targets, controlSelector) ||
+        findModeCandidate(platform.modeTriggerTexts || targets, controlSelector);
+      if (!toggle || isDisabled(toggle)) {
+        U.log(`${platform.name}: toggle mode ${option.label} was not found; continuing with current mode.`);
+        return false;
+      }
+
+      const desiredActive = option.desiredActive !== false;
+      if (isActiveControl(toggle) !== desiredActive) {
+        U.clickEl(toggle);
+        await U.delay(500);
+      }
+      U.log(`${platform.name}: ensured toggle mode ${option.label}.`);
+      return true;
     }
 
-    const input = await U.waitForVisible(() => U.findVisible(platform.selectors.input), 8000);
-    if (!input) {
-      throw new Error('未找到输入框');
+    const alreadySelected = findModeCandidate(targets, controlSelector);
+    if (alreadySelected && isActiveControl(alreadySelected)) {
+      U.log(`${platform.name}: mode ${option.label} already selected.`);
+      return true;
     }
 
+    const menu = findModeCandidate(platform.modeTriggerTexts || targets, controlSelector) || U.findVisible([
+      'button[aria-label*="model"]',
+      'button[aria-label*="Model"]',
+      'button[aria-label*="模型"]',
+      'button[aria-label*="模式"]',
+      'button[data-testid*="model"]',
+      'button[class*="model"]',
+      'div[role="button"][aria-label*="模型"]',
+      'div[role="button"][aria-label*="模式"]',
+      'div[role="combobox"]',
+      '[aria-haspopup="listbox"]',
+      '[aria-haspopup="menu"]',
+    ]);
+
+    if (menu && !isDisabled(menu)) {
+      U.clickEl(menu);
+      await U.delay(550);
+      const item = findModeCandidate(
+        targets,
+        'button,div[role="button"],div[role="option"],li,[role="menuitem"],span,[aria-label],[title],[data-testid],[data-test-id]',
+        { allowAnyPosition: true }
+      );
+      if (item && !isDisabled(item)) {
+        U.clickEl(item);
+        await U.delay(700);
+        U.log(`${platform.name}: selected mode ${option.label} from menu.`);
+        return true;
+      }
+    }
+
+    U.log(`${platform.name}: mode ${option.label} was not found; continuing with current mode.`);
+    return false;
+  }
+
+  async function runPlatformAction(content, mode, platform, preference = {}) {
+    U.log(`${platform.name}: start ${mode} action.`);
+    await startFreshChat(platform, mode);
+    await applyModePreference(platform, preference);
+
+    const input = await findInput(platform);
     const finalContent = mode === 'image'
       ? `请生成图片：${content}`
       : content;
 
-    let submitInput = input;
-    if (platform.clearAndWriteBeforeSubmit) {
-      submitInput = await clearAndWriteOnce(platform, finalContent);
-    } else {
-      input.dataset.ai2tabSite = platform.name;
-      U.setInput(input, finalContent);
-      await U.delay(700);
-    }
-
-    if (platform.name === '通义千问') {
-      return submitQwen(platform, submitInput);
-    }
-
-    if (platform.name === '豆包') {
-      return submitDoubao(platform, submitInput);
-    }
-
-    const sent = await clickOrPressSend(platform, submitInput, null, mode === 'image' && platform.requireVerifyForImage);
-    if (!sent) {
-      throw new Error('输入已填入，但发送后未检测到输入框清空或生成状态');
-    }
-
-    U.log(`${platform.name}: message dispatched and verified.`);
+    await writePrompt(platform, input, finalContent);
+    await submit(platform, input, mode);
+    U.log(`${platform.name}: message dispatched.`);
     return true;
-  }
-
-  async function handlePlatformAction(content, mode, platform) {
-    U.log(`${platform.name}: start ${mode} action.`);
-    if (!(mode === 'image' && platform.skipNewChatForImage)) {
-      await clickNewChat(platform);
-    }
-    await clickOptionalMode(platform);
-    return fillAndSend(platform, content, mode);
   }
 
   function handleMessage(message, sender, sendResponse) {
@@ -554,7 +454,7 @@
     }
 
     if (message.action === 'sendMessage') {
-      handlePlatformAction(message.content || '', 'text', platform)
+      runPlatformAction(message.content || '', 'text', platform, getSitePreference(message, platform))
         .then(() => sendResponse({ success: true, platform: platform.name }))
         .catch(error => {
           U.error(`${platform.name}: send failed`, error);
@@ -565,7 +465,7 @@
 
     if (message.action === 'generateImage') {
       const content = `${message.prompt || ''}，尺寸：${message.size || '1024x1024'}`;
-      handlePlatformAction(content, 'image', platform)
+      runPlatformAction(content, 'image', platform, getSitePreference(message, platform))
         .then(() => sendResponse({ success: true, platform: platform.name }))
         .catch(error => {
           U.error(`${platform.name}: image request failed`, error);
@@ -576,6 +476,11 @@
 
     if (message.action === 'ping') {
       sendResponse({ success: true, platform: platform.name });
+      return true;
+    }
+
+    if (message.action === 'diagnoseModes') {
+      sendResponse({ success: true, diagnosis: diagnoseModeControls(platform) });
       return true;
     }
 

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AI2tab",
-  "version": "2.0.0",
-  "description": "在一个弹窗里把消息同步发送到多个 AI 模型网页。",
+  "version": "3.0.0",
+  "description": "在一个弹窗里把提示词发送到多个已打开的 AI 网页。",
   "permissions": [
     "tabs",
     "activeTab",
@@ -11,14 +11,19 @@
   ],
   "host_permissions": [
     "*://chat.openai.com/*",
+    "*://*.chat.openai.com/*",
     "*://chatgpt.com/*",
+    "*://*.chatgpt.com/*",
     "*://gemini.google.com/*",
+    "*://*.gemini.google.com/*",
     "*://x.ai/*",
     "*://*.x.ai/*",
     "*://grok.com/*",
     "*://*.grok.com/*",
-    "*://x.com/*",
-    "*://*.x.com/*",
+    "*://x.com/i/grok*",
+    "*://x.com/grok*",
+    "*://*.x.com/i/grok*",
+    "*://*.x.com/grok*",
     "*://tongyi.aliyun.com/*",
     "*://*.tongyi.aliyun.com/*",
     "*://qianwen.aliyun.com/*",
@@ -28,15 +33,29 @@
     "*://qwen.ai/*",
     "*://*.qwen.ai/*",
     "*://doubao.com/*",
+    "*://www.doubao.com/*",
     "*://*.doubao.com/*",
     "*://kimi.moonshot.cn/*",
+    "*://*.kimi.moonshot.cn/*",
     "*://kimi.com/*",
     "*://*.kimi.com/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
+  "icons": {
+    "16": "icons/ai2-16.png",
+    "32": "icons/ai2-32.png",
+    "48": "icons/ai2-48.png",
+    "128": "icons/ai2-128.png"
+  },
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/ai2-16.png",
+      "32": "icons/ai2-32.png",
+      "48": "icons/ai2-48.png",
+      "128": "icons/ai2-128.png"
+    }
   }
 }
