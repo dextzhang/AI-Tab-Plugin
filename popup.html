@@ -5,18 +5,23 @@
   <title>AI2tab</title>
   <style>
     :root {
-      --text: #172033;
-      --muted: #667085;
-      --surface: rgba(255, 255, 255, 0.68);
-      --surface-strong: rgba(255, 255, 255, 0.86);
-      --border: rgba(91, 109, 140, 0.24);
-      --accent: #2563eb;
-      --accent-strong: #1746c8;
+      --text: #171512;
+      --muted: #7a746a;
+      --surface: rgba(250, 248, 242, 0.72);
+      --surface-strong: rgba(255, 253, 248, 0.9);
+      --border: rgba(151, 138, 112, 0.28);
+      --gold: #d8c392;
+      --gold-soft: #efe4c8;
+      --gold-strong: #a98237;
+      --accent: #cdb47a;
+      --accent-strong: #8b6a2b;
       --success: #138a4d;
       --warning: #b7791f;
       --error: #c2413d;
-      --shadow: 0 18px 48px rgba(31, 43, 68, 0.18);
-      --inner: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+      --shadow: 10px 16px 34px rgba(74, 64, 49, 0.2), -8px -8px 22px rgba(255, 255, 255, 0.82);
+      --raised-shadow: 7px 9px 18px rgba(79, 68, 52, 0.18), -5px -5px 14px rgba(255, 255, 255, 0.86), inset 0 1px 0 rgba(255, 255, 255, 0.92);
+      --lift-shadow: 9px 12px 22px rgba(79, 68, 52, 0.22), -6px -6px 16px rgba(255, 255, 255, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      --inner: inset 0 1px 0 rgba(255, 255, 255, 0.88);
       --blur: blur(22px) saturate(1.35);
       --radius: 18px;
       color-scheme: light;
@@ -34,14 +39,16 @@
       overflow-y: auto;
       font-family: Inter, Arial, "Microsoft YaHei", sans-serif;
       color: var(--text);
-      background: #f4f5f7;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.76), transparent 28%),
+        #e7e0d2;
     }
 
     .shell {
       padding: 14px;
       border: 1px solid var(--border);
       border-radius: 24px;
-      background: linear-gradient(145deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.5)), var(--surface);
+      background: rgba(248, 244, 235, 0.74);
       box-shadow: var(--shadow), var(--inner);
       backdrop-filter: var(--blur);
     }
@@ -71,11 +78,11 @@
     .badge {
       flex: 0 0 auto;
       padding: 6px 9px;
-      border: 1px solid rgba(37, 99, 235, 0.22);
+      border: 1px solid rgba(169, 137, 73, 0.22);
       border-radius: 999px;
-      color: #1746c8;
-      background: rgba(255, 255, 255, 0.62);
-      box-shadow: var(--inner);
+      color: #7c622a;
+      background: rgba(243, 236, 219, 0.92);
+      box-shadow: var(--raised-shadow);
       font-size: 11px;
       font-weight: 700;
     }
@@ -86,18 +93,18 @@
       gap: 5px;
       margin-bottom: 12px;
       padding: 5px;
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      background: rgba(255, 255, 255, 0.46);
-      box-shadow: var(--inner);
+      border: 1px solid rgba(151, 138, 112, 0.22);
+      border-radius: 20px;
+      background: rgba(246, 242, 233, 0.58);
+      box-shadow: var(--raised-shadow);
       backdrop-filter: blur(16px);
     }
 
     .tab {
       min-height: 36px;
       padding: 8px 10px;
-      border-radius: 12px;
-      color: #475467;
+      border-radius: 999px;
+      color: #5f5a51;
       font-size: 13px;
       font-weight: 700;
       text-align: center;
@@ -107,13 +114,13 @@
     }
 
     .tab:hover {
-      background: rgba(255, 255, 255, 0.56);
+      background: rgba(255, 253, 246, 0.72);
     }
 
     .tab.active {
-      color: #fff;
-      background: linear-gradient(180deg, #3b82f6, #1d4ed8);
-      box-shadow: 0 8px 18px rgba(37, 99, 235, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+      color: #171512;
+      background: #ead7a8;
+      box-shadow: var(--lift-shadow);
       transform: translateY(-1px);
     }
 
@@ -128,7 +135,7 @@
     label {
       display: block;
       margin: 0 0 6px;
-      color: #344054;
+      color: #514b41;
       font-size: 12px;
       font-weight: 800;
     }
@@ -140,11 +147,11 @@
     textarea,
     select {
       width: 100%;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background: var(--surface-strong);
+      border: 1px solid rgba(151, 138, 112, 0.24);
+      border-radius: 18px;
+      background: rgba(252, 249, 241, 0.94);
       color: #101828;
-      box-shadow: var(--inner);
+      box-shadow: var(--raised-shadow);
       font-family: inherit;
       font-size: 14px;
       outline: none;
@@ -153,9 +160,9 @@
 
     textarea:focus,
     select:focus {
-      border-color: rgba(37, 99, 235, 0.64);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14), var(--inner);
-      background: rgba(255, 255, 255, 0.94);
+      border-color: rgba(169, 137, 73, 0.58);
+      box-shadow: 0 0 0 3px rgba(216, 195, 146, 0.24), var(--raised-shadow);
+      background: rgba(255, 254, 249, 0.96);
     }
 
     textarea {
@@ -174,10 +181,10 @@
       min-height: 38px;
       padding: 9px 13px;
       border: 1px solid rgba(255, 255, 255, 0.4);
-      border-radius: 14px;
-      background: linear-gradient(180deg, #3b82f6, #1d4ed8);
-      color: white;
-      box-shadow: 0 10px 22px rgba(37, 99, 235, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.36);
+      border-radius: 999px;
+      background: #e8d39c;
+      color: #16130d;
+      box-shadow: var(--lift-shadow);
       font-size: 13px;
       font-weight: 800;
       cursor: pointer;
@@ -185,9 +192,9 @@
     }
 
     button:hover {
-      filter: saturate(1.05) brightness(1.02);
+      filter: saturate(1.04) brightness(1.03);
       transform: translateY(-1px);
-      box-shadow: 0 13px 28px rgba(37, 99, 235, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+      box-shadow: 9px 12px 24px rgba(96, 78, 42, 0.26), -5px -5px 14px rgba(255, 255, 255, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.86);
     }
 
     button:active {
@@ -196,7 +203,7 @@
 
     button:focus-visible,
     input:focus-visible {
-      outline: 3px solid rgba(37, 99, 235, 0.22);
+      outline: 3px solid rgba(216, 195, 146, 0.36);
       outline-offset: 2px;
     }
 
@@ -213,9 +220,9 @@
     button.secondary {
       min-height: 30px;
       padding: 6px 10px;
-      color: #344054;
-      background: rgba(255, 255, 255, 0.6);
-      box-shadow: var(--inner), 0 7px 16px rgba(40, 51, 72, 0.08);
+      color: #4f4739;
+      background: rgba(244, 238, 225, 0.92);
+      box-shadow: var(--raised-shadow);
       font-size: 12px;
     }
 
@@ -223,14 +230,14 @@
       min-height: 18px;
       margin: 10px 0 2px;
       padding: 9px 10px;
-      border: 1px solid var(--border);
-      border-radius: 14px;
+      border: 1px solid rgba(151, 138, 112, 0.24);
+      border-radius: 18px;
       white-space: pre-wrap;
       font-size: 12px;
       line-height: 1.45;
       color: #344054;
-      background: rgba(255, 255, 255, 0.52);
-      box-shadow: var(--inner);
+      background: rgba(255, 252, 244, 0.62);
+      box-shadow: var(--raised-shadow);
     }
 
     .status:empty {
@@ -249,16 +256,16 @@
 
     .status[data-type="info"] {
       color: var(--accent-strong);
-      border-color: rgba(37, 99, 235, 0.22);
+      border-color: rgba(216, 195, 146, 0.42);
     }
 
     .panel {
       margin-top: 14px;
       padding: 12px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: rgba(255, 255, 255, 0.42);
-      box-shadow: var(--inner);
+      border: 1px solid rgba(151, 138, 112, 0.22);
+      border-radius: 22px;
+      background: rgba(246, 241, 231, 0.66);
+      box-shadow: var(--raised-shadow);
       backdrop-filter: blur(18px) saturate(1.2);
     }
 
@@ -293,10 +300,10 @@
       gap: 8px;
       align-items: center;
       padding: 8px;
-      border: 1px solid rgba(91, 109, 140, 0.16);
-      border-radius: 14px;
-      background: rgba(255, 255, 255, 0.58);
-      box-shadow: var(--inner);
+      border: 1px solid rgba(151, 138, 112, 0.18);
+      border-radius: 18px;
+      background: rgba(250, 246, 237, 0.76);
+      box-shadow: var(--raised-shadow);
     }
 
     .site-toggle {
@@ -311,12 +318,12 @@
     .site-toggle input {
       width: 18px;
       height: 18px;
-      accent-color: var(--accent);
+      accent-color: var(--gold-strong);
     }
 
     .mode-select {
       height: 34px;
-      border-radius: 12px;
+      border-radius: 999px;
       font-size: 12px;
     }
 
@@ -329,11 +336,11 @@
       width: 100%;
       margin-bottom: 8px;
       padding: 10px;
-      border: 1px solid rgba(91, 109, 140, 0.18);
-      border-radius: 14px;
-      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(151, 138, 112, 0.18);
+      border-radius: 18px;
+      background: rgba(250, 246, 237, 0.78);
       color: var(--text);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+      box-shadow: var(--raised-shadow);
       font-size: 12px;
       text-align: left;
     }
@@ -343,8 +350,8 @@
     }
 
     .history-item:hover {
-      border-color: rgba(37, 99, 235, 0.32);
-      background: rgba(255, 255, 255, 0.88);
+      border-color: rgba(169, 137, 73, 0.34);
+      background: rgba(255, 253, 246, 0.9);
     }
 
     .history-content,
