@@ -3,6 +3,10 @@ const SEND_LOGS_KEY = 'sendLogs';
 const SEND_PREFS_KEY = 'sendPreferences';
 const MAX_HISTORY = 5;
 const MAX_SEND_LOGS = 10;
+const MAX_INPUT_LENGTH = 30000;
+const CURRENT_MODE_VALUE = 'current';
+const CUSTOM_MODE_PREFIX = 'detected:';
+const SEND_PREFS_VERSION = 2;
 const SITE = globalThis.AI2TAB_SITE_CONFIG;
 
 function storageGet(keys) {
@@ -90,17 +94,18 @@ function defaultPreferences() {
   SITE.sites.forEach(site => {
     sites[site.id] = {
       enabled: true,
-      mode: site.defaultMode || site.modeOptions?.[0]?.value || 'default',
+      mode: CURRENT_MODE_VALUE,
+      customModeOptions: [],
     };
   });
-  return { sites };
+  return { version: SEND_PREFS_VERSION, sites };
 }
 
 async function loadPreferences() {
   const defaults = defaultPreferences();
   const data = await storageGet(SEND_PREFS_KEY);
   const saved = data[SEND_PREFS_KEY] || {};
-  return {
+  const preferences = {
     ...defaults,
     ...saved,
     sites: {
@@ -108,10 +113,77 @@ async function loadPreferences() {
       ...(saved.sites || {}),
     },
   };
+
+  if (saved.version !== SEND_PREFS_VERSION) {
+    SITE.sites.forEach(site => {
+      preferences.sites[site.id] = {
+        ...(preferences.sites[site.id] || {}),
+        enabled: preferences.sites[site.id]?.enabled !== false,
+        mode: CURRENT_MODE_VALUE,
+        customModeOptions: preferences.sites[site.id]?.customModeOptions || [],
+      };
+    });
+    preferences.version = SEND_PREFS_VERSION;
+    await savePreferences(preferences);
+  }
+
+  return preferences;
 }
 
 async function savePreferences(preferences) {
   await storageSet({ [SEND_PREFS_KEY]: preferences });
+}
+
+function slugifyModeLabel(label) {
+  return String(label || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\u4e00-\u9fa5-]/g, '')
+    .slice(0, 36);
+}
+
+function normalizeModeLabel(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function getCandidateLabel(candidate) {
+  return normalizeModeLabel(candidate?.text || candidate?.aria || candidate?.title || candidate?.testId || '');
+}
+
+function getModeOptions(site, sitePrefs = {}) {
+  const options = [
+    { value: CURRENT_MODE_VALUE, label: '使用页面当前模型' },
+    ...(site.modeOptions || []),
+    ...(Array.isArray(sitePrefs.customModeOptions) ? sitePrefs.customModeOptions : []),
+  ];
+  const seen = new Set();
+
+  return options.filter(option => {
+    if (!option?.value || seen.has(option.value)) return false;
+    seen.add(option.value);
+    return true;
+  });
+}
+
+function buildDetectedModeOptions(diagnosis) {
+  const seenLabels = new Set();
+  return (diagnosis?.candidates || [])
+    .map(getCandidateLabel)
+    .filter(label => label && label.length <= 40)
+    .filter(label => {
+      const key = label.toLowerCase();
+      if (seenLabels.has(key)) return false;
+      seenLabels.add(key);
+      return true;
+    })
+    .slice(0, 8)
+    .map(label => ({
+      value: `${CUSTOM_MODE_PREFIX}${slugifyModeLabel(label) || Date.now()}`,
+      label: `诊断发现：${label}`,
+      texts: [label],
+      source: 'diagnosis',
+    }));
 }
 
 function renderSiteSettings(preferences) {
@@ -138,15 +210,15 @@ function renderSiteSettings(preferences) {
     const select = document.createElement('select');
     select.className = 'mode-select';
     select.dataset.siteMode = site.id;
-    (site.modeOptions || [{ value: 'default', label: '默认' }]).forEach(option => {
+    getModeOptions(site, sitePrefs).forEach(option => {
       const item = document.createElement('option');
       item.value = option.value;
       item.textContent = option.label;
       select.appendChild(item);
     });
     const allowedModes = Array.from(select.options).map(option => option.value);
-    const preferredMode = sitePrefs.mode || site.defaultMode || select.options[0]?.value;
-    select.value = allowedModes.includes(preferredMode) ? preferredMode : (site.defaultMode || select.options[0]?.value);
+    const preferredMode = sitePrefs.mode || CURRENT_MODE_VALUE;
+    select.value = allowedModes.includes(preferredMode) ? preferredMode : CURRENT_MODE_VALUE;
     select.disabled = !toggle.checked;
 
     async function persist() {
@@ -154,6 +226,7 @@ function renderSiteSettings(preferences) {
         ...(preferences.sites[site.id] || {}),
         enabled: toggle.checked,
         mode: select.value,
+        customModeOptions: sitePrefs.customModeOptions || [],
       };
       select.disabled = !toggle.checked;
       await savePreferences(preferences);
@@ -162,7 +235,12 @@ function renderSiteSettings(preferences) {
     toggle.addEventListener('change', persist);
     select.addEventListener('change', persist);
 
-    row.append(toggleLabel, select);
+    const badge = document.createElement('span');
+    badge.className = 'site-status-badge';
+    badge.dataset.siteStatus = site.id;
+    badge.textContent = '';
+
+    row.append(toggleLabel, select, badge);
     container.appendChild(row);
   });
 }
@@ -173,6 +251,7 @@ async function getSendPreferences() {
     const siteId = toggle.dataset.siteToggle;
     const select = document.querySelector(`[data-site-mode="${siteId}"]`);
     preferences.sites[siteId] = {
+      ...(preferences.sites[siteId] || {}),
       enabled: toggle.checked,
       mode: select?.value || preferences.sites[siteId]?.mode,
     };
@@ -185,6 +264,53 @@ async function resetPreferences() {
   const preferences = defaultPreferences();
   await savePreferences(preferences);
   renderSiteSettings(preferences);
+}
+
+async function saveDetectedModesFromDiagnosis(log) {
+  const preferences = await loadPreferences();
+  let changedCount = 0;
+
+  (log?.details || []).forEach(detail => {
+    if (!detail.ok || !detail.diagnosis?.candidates?.length) return;
+    const site = SITE.sites.find(item => item.name === detail.site || item.name === detail.diagnosis.platform);
+    if (!site) return;
+
+    const detectedOptions = buildDetectedModeOptions(detail.diagnosis);
+    if (detectedOptions.length === 0) return;
+
+    const currentPrefs = preferences.sites[site.id] || { enabled: true, mode: CURRENT_MODE_VALUE };
+    const builtInLabels = new Set((site.modeOptions || []).flatMap(option => [
+      option.label,
+      ...(option.texts || []),
+    ]).map(label => String(label).toLowerCase()));
+    const existingCustom = Array.isArray(currentPrefs.customModeOptions) ? currentPrefs.customModeOptions : [];
+    const existingLabels = new Set(existingCustom.flatMap(option => [
+      String(option.label || '').replace(/^诊断发现：/, ''),
+      ...(option.texts || []),
+    ]).filter(Boolean).map(label => String(label).toLowerCase()));
+    const merged = [...existingCustom];
+
+    detectedOptions.forEach(option => {
+      const rawLabel = option.texts[0];
+      const key = rawLabel.toLowerCase();
+      if (builtInLabels.has(key) || existingLabels.has(key)) return;
+      merged.push(option);
+      existingLabels.add(key);
+      changedCount += 1;
+    });
+
+    preferences.sites[site.id] = {
+      ...currentPrefs,
+      customModeOptions: merged.slice(-12),
+    };
+  });
+
+  if (changedCount > 0) {
+    await savePreferences(preferences);
+    renderSiteSettings(preferences);
+  }
+
+  return changedCount;
 }
 
 async function loadHistory() {
@@ -258,14 +384,6 @@ async function loadSendLogs() {
   });
 }
 
-async function saveSendLog(log) {
-  const data = await storageGet(SEND_LOGS_KEY);
-  const logs = data[SEND_LOGS_KEY] || [];
-  logs.unshift(log);
-  await storageSet({ [SEND_LOGS_KEY]: logs.slice(0, MAX_SEND_LOGS) });
-  await loadSendLogs();
-}
-
 async function clearSendLogs() {
   await storageRemove(SEND_LOGS_KEY);
   await loadSendLogs();
@@ -293,8 +411,10 @@ function sendRuntimeMessage(message) {
   });
 }
 
+// Delegate error log saving to background to avoid race conditions on storage.
+// Falls back to direct storage write if background is unreachable.
 async function saveLocalErrorLog(mode, preview, errorMessage) {
-  await saveSendLog({
+  const log = {
     createdAt: Date.now(),
     mode,
     preview: preview.slice(0, 160),
@@ -305,8 +425,53 @@ async function saveLocalErrorLog(mode, preview, errorMessage) {
       ok: false,
       error: errorMessage,
     }],
+  };
+
+  try {
+    await sendRuntimeMessage({ action: 'saveErrorLog', log });
+  } catch (_) {
+    // Background unreachable — write directly as last resort
+    const data = await storageGet(SEND_LOGS_KEY);
+    const logs = data[SEND_LOGS_KEY] || [];
+    logs.unshift(log);
+    await storageSet({ [SEND_LOGS_KEY]: logs.slice(0, MAX_SEND_LOGS) });
+  }
+  await loadSendLogs();
+}
+
+function clearAllProgressBadges() {
+  document.querySelectorAll('.site-status-badge').forEach(badge => {
+    badge.textContent = '';
+    delete badge.dataset.status;
+    badge.removeAttribute('title');
   });
 }
+
+// Listen to progress updates from background
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.action === 'ai2tabProgressUpdate') {
+    const badge = document.querySelector(`.site-status-badge[data-site-status="${message.siteId}"]`);
+    if (badge) {
+      badge.dataset.status = message.status;
+      if (message.status === 'waiting') {
+        badge.textContent = '等待中...';
+      } else if (message.status === 'preparing') {
+        badge.textContent = message.detail || '准备中...';
+      } else if (message.status === 'sending') {
+        badge.textContent = message.detail || '发送中...';
+      } else if (message.status === 'success') {
+        badge.textContent = '✓ 发送成功';
+      } else if (message.status === 'error') {
+        badge.textContent = '✗ 失败';
+        badge.title = message.error || '发送失败';
+      } else if (message.status === 'skipped') {
+        badge.textContent = '已跳过';
+      } else {
+        badge.textContent = '';
+      }
+    }
+  }
+});
 
 async function sendMessage() {
   const button = document.getElementById('sendBtn');
@@ -317,7 +482,13 @@ async function sendMessage() {
     return;
   }
 
+  if (message.length > MAX_INPUT_LENGTH) {
+    updateStatus(`提示词过长（${message.length} 字符），请控制在 ${MAX_INPUT_LENGTH} 字符以内。`, 'error');
+    return;
+  }
+
   setBusy(button, true, '发送中...');
+  clearAllProgressBadges();
   updateStatus('正在查找已打开且已启用的 AI 页面...', 'info');
 
   try {
@@ -362,7 +533,13 @@ async function generateImage() {
     return;
   }
 
+  if (prompt.length > MAX_INPUT_LENGTH) {
+    updateStatus(`图片提示词过长（${prompt.length} 字符），请控制在 ${MAX_INPUT_LENGTH} 字符以内。`, 'error');
+    return;
+  }
+
   setBusy(button, true, '发送中...');
+  clearAllProgressBadges();
   updateStatus('正在查找支持图片生成且已启用的 AI 页面...', 'info');
 
   try {
@@ -410,7 +587,9 @@ async function diagnoseModes() {
     }
 
     const { targetCount, successCount } = response.log;
-    updateStatus(`模式控件诊断完成：${successCount}/${targetCount} 个页面返回结果。`, successCount > 0 ? 'success' : 'error');
+    const changedCount = await saveDetectedModesFromDiagnosis(response.log);
+    const extra = changedCount > 0 ? ` 已追加 ${changedCount} 个可选模式。` : '';
+    updateStatus(`模式控件诊断完成：${successCount}/${targetCount} 个页面返回结果。${extra}`, successCount > 0 ? 'success' : 'error');
   } catch (error) {
     await saveLocalErrorLog('Mode Diagnose', '模型/模式控件诊断', error.message);
     updateStatus(`模式控件诊断失败：${error.message}`, 'error');

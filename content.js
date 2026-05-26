@@ -1,7 +1,7 @@
 (function() {
   const U = window.TabPluginUtils;
   const SITE = window.AI2TAB_SITE_CONFIG;
-  const CONTENT_VERSION = '3.0.0';
+  const CONTENT_VERSION = (typeof chrome !== 'undefined' && chrome.runtime?.getManifest) ? chrome.runtime.getManifest().version : '3.1.6';
 
   if (!U || !SITE) {
     console.error('[AI2tab] ai-sites.js and utils.js are required before content.js');
@@ -14,6 +14,17 @@
   }
 
   window.__AI2TAB_CONTENT_VERSION__ = CONTENT_VERSION;
+
+  // ── Timing constants ──
+  const TIMING = {
+    AFTER_CLEAR: 120,
+    AFTER_SET: 550,
+    AFTER_SUBMIT: 700,
+    AFTER_FRESH_NAV: 900,
+    AFTER_TOGGLE: 500,
+    AFTER_MENU_CLICK: 550,
+    AFTER_MODE_SELECT: 700,
+  };
 
   function detectPlatform() {
     return SITE.getSiteByUrl(window.location.href);
@@ -78,7 +89,7 @@
     if (currentRoute === targetRoute && !platform.isExistingConversation?.(current)) return false;
 
     window.location.href = freshUrl;
-    await U.delay(platform.delayAfterFreshChat + 900);
+    await U.delay(platform.delayAfterFreshChat + TIMING.AFTER_FRESH_NAV);
     return true;
   }
 
@@ -169,25 +180,25 @@
     if (!input) {
       throw new Error('未找到输入框');
     }
-    input.dataset.ai2tabSite = platform.name;
     return input;
   }
 
   async function writePrompt(platform, input, content) {
-    input.dataset.ai2tabSite = platform.name;
+    const strategy = platform.inputStrategy || 'default';
+
     if (platform.clearBeforeSubmit) {
       U.clearInput(input);
-      await U.delay(120);
+      await U.delay(TIMING.AFTER_CLEAR);
     }
-    U.setInput(input, content);
-    await U.delay(550);
+    U.setInput(input, content, strategy);
+    await U.delay(TIMING.AFTER_SET);
 
     const current = readInputValue(input);
     if (!current || !current.includes(content.slice(0, Math.min(content.length, 40)))) {
       U.clearInput(input);
-      await U.delay(120);
-      U.setInput(input, content);
-      await U.delay(550);
+      await U.delay(TIMING.AFTER_CLEAR);
+      U.setInput(input, content, strategy);
+      await U.delay(TIMING.AFTER_SET);
     }
   }
 
@@ -226,20 +237,20 @@
 
     if (platform.preferEnter) {
       pressKey(input, submitKeys[0]);
-      await U.delay(700);
+      await U.delay(TIMING.AFTER_SUBMIT);
       if (!needsVerify || await waitForSendEffect(input)) return true;
     }
 
     const button = await U.waitFor(() => findBestSendButton(platform, input), 3500, 200);
     if (button && !isDisabled(button)) {
       U.clickEl(button);
-      await U.delay(700);
+      await U.delay(TIMING.AFTER_SUBMIT);
       if (!needsVerify || await waitForSendEffect(input)) return true;
     }
 
     for (const keySpec of submitKeys) {
       pressKey(input, keySpec);
-      await U.delay(700);
+      await U.delay(TIMING.AFTER_SUBMIT);
       if (!needsVerify || await waitForSendEffect(input)) return true;
     }
 
@@ -248,7 +259,14 @@
 
   function getSelectedMode(platform, preference) {
     const selected = preference.mode || platform.defaultMode || platform.modeOptions?.[0]?.value;
-    return platform.modeOptions?.find(option => option.value === selected) || null;
+    if (!selected || selected === 'current') {
+      return { value: 'current', label: '当前页面模型', skipSelection: true };
+    }
+    const options = [
+      ...(platform.modeOptions || []),
+      ...(Array.isArray(preference.customModeOptions) ? preference.customModeOptions : []),
+    ];
+    return options.find(option => option.value === selected) || null;
   }
 
   function compactText(value) {
@@ -309,6 +327,26 @@
       .find(item => wanted.some(text => item.info.signal.toLowerCase().includes(text)))?.element || null;
   }
 
+  function isUnavailableModeItem(element) {
+    if (!element || isDisabled(element)) return true;
+    const signal = [
+      element.textContent,
+      element.getAttribute('aria-label'),
+      element.getAttribute('title'),
+      element.getAttribute('data-testid'),
+      element.getAttribute('data-test-id'),
+      element.className,
+    ].join(' ').toLowerCase();
+
+    return /upgrade|subscribe|subscription|premium|plan|locked|lock|unavailable|disabled|limit|权限|升级|订阅|会员|解锁|不可用|限额|无权/.test(signal);
+  }
+
+  function getFallbackModeOption(platform, failedOption) {
+    const fallbackValue = platform.defaultMode || platform.modeOptions?.[0]?.value;
+    if (!fallbackValue || fallbackValue === failedOption?.value) return null;
+    return platform.modeOptions?.find(option => option.value === fallbackValue) || null;
+  }
+
   function isActiveControl(element) {
     if (!element) return false;
     if (['aria-checked', 'aria-pressed', 'aria-selected'].some(name => element.getAttribute(name) === 'true')) {
@@ -366,33 +404,51 @@
     };
   }
 
-  async function applyModePreference(platform, preference) {
+  async function applyModePreference(platform, preference, fallbackAllowed = true) {
     const option = getSelectedMode(platform, preference);
     if (!option) return true;
+    if (option.skipSelection) {
+      U.log(`${platform.name}: using current page model; mode switching skipped.`);
+      return true;
+    }
 
     const targets = option.texts || [option.label];
     const controlSelector = 'button,select,option,div[role="button"],div[role="tab"],div[role="switch"],div[role="combobox"],[aria-label],[title],[data-testid],[data-test-id]';
 
+    async function fallbackToDefault(reason) {
+      const fallback = fallbackAllowed ? getFallbackModeOption(platform, option) : null;
+      if (!fallback) {
+        U.log(`${platform.name}: mode ${option.label} ${reason}; continuing with current mode.`);
+        return false;
+      }
+
+      U.log(`${platform.name}: mode ${option.label} ${reason}; falling back to ${fallback.label}.`);
+      return applyModePreference(platform, { ...preference, mode: fallback.value }, false);
+    }
+
     if (platform.modeStrategy === 'toggle') {
       const toggle = findModeCandidate(targets, controlSelector) ||
         findModeCandidate(platform.modeTriggerTexts || targets, controlSelector);
-      if (!toggle || isDisabled(toggle)) {
-        U.log(`${platform.name}: toggle mode ${option.label} was not found; continuing with current mode.`);
+      if (!toggle) {
+        U.log(`${platform.name}: toggle mode ${option.label} was not found; keeping current mode.`);
         return false;
+      }
+      if (isUnavailableModeItem(toggle)) {
+        return fallbackToDefault('was not available');
       }
 
       const desiredActive = option.desiredActive !== false;
       if (isActiveControl(toggle) !== desiredActive) {
         U.clickEl(toggle);
-        await U.delay(500);
+        await U.delay(TIMING.AFTER_TOGGLE);
       }
       U.log(`${platform.name}: ensured toggle mode ${option.label}.`);
       return true;
     }
 
     const alreadySelected = findModeCandidate(targets, controlSelector);
-    if (alreadySelected && isActiveControl(alreadySelected)) {
-      U.log(`${platform.name}: mode ${option.label} already selected.`);
+    if (alreadySelected && !isUnavailableModeItem(alreadySelected)) {
+      U.log(`${platform.name}: mode ${option.label} appears to be current or directly available; mode switch skipped.`);
       return true;
     }
 
@@ -412,25 +468,32 @@
 
     if (menu && !isDisabled(menu)) {
       U.clickEl(menu);
-      await U.delay(550);
+      await U.delay(TIMING.AFTER_MENU_CLICK);
       const item = findModeCandidate(
         targets,
         'button,div[role="button"],div[role="option"],li,[role="menuitem"],span,[aria-label],[title],[data-testid],[data-test-id]',
         { allowAnyPosition: true }
       );
-      if (item && !isDisabled(item)) {
+      if (item && isUnavailableModeItem(item)) {
+        return fallbackToDefault('was not available');
+      }
+      if (item) {
         U.clickEl(item);
-        await U.delay(700);
+        await U.delay(TIMING.AFTER_MODE_SELECT);
         U.log(`${platform.name}: selected mode ${option.label} from menu.`);
         return true;
       }
     }
 
-    U.log(`${platform.name}: mode ${option.label} was not found; continuing with current mode.`);
+    U.log(`${platform.name}: mode ${option.label} was not found; keeping current mode.`);
     return false;
   }
 
   async function runPlatformAction(content, mode, platform, preference = {}) {
+    if (typeof platform.customRunAction === 'function') {
+      return platform.customRunAction(content, mode, platform, preference, U);
+    }
+
     U.log(`${platform.name}: start ${mode} action.`);
     await startFreshChat(platform, mode);
     await applyModePreference(platform, preference);
@@ -453,7 +516,7 @@
       return true;
     }
 
-    if (message.action === 'sendMessage') {
+    if (message.action === 'sendMessage' || message.action === 'sendMessageV2') {
       runPlatformAction(message.content || '', 'text', platform, getSitePreference(message, platform))
         .then(() => sendResponse({ success: true, platform: platform.name }))
         .catch(error => {
@@ -463,7 +526,7 @@
       return true;
     }
 
-    if (message.action === 'generateImage') {
+    if (message.action === 'generateImage' || message.action === 'generateImageV2') {
       const content = `${message.prompt || ''}，尺寸：${message.size || '1024x1024'}`;
       runPlatformAction(content, 'image', platform, getSitePreference(message, platform))
         .then(() => sendResponse({ success: true, platform: platform.name }))
@@ -475,16 +538,22 @@
     }
 
     if (message.action === 'ping') {
-      sendResponse({ success: true, platform: platform.name });
+      sendResponse({ success: true, platform: platform.name, version: CONTENT_VERSION });
       return true;
     }
 
     if (message.action === 'diagnoseModes') {
-      sendResponse({ success: true, diagnosis: diagnoseModeControls(platform) });
+      try {
+        sendResponse({ success: true, diagnosis: diagnoseModeControls(platform) });
+      } catch (error) {
+        sendResponse({ success: false, error: error.message });
+      }
       return true;
     }
 
-    return false;
+    // Unknown action
+    sendResponse({ success: false, error: `Unknown action: ${message.action}` });
+    return true;
   }
 
   window.__AI2TAB_HANDLE_MESSAGE__ = handleMessage;

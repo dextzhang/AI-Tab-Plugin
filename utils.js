@@ -1,9 +1,21 @@
 window.TabPluginUtils = (function() {
-  const DEBUG = true;
-  const UTILS_VERSION = '2.0.0';
+  const UTILS_VERSION = '3.2.0';
+  const MAX_SHADOW_DEPTH = 5;
+  const MAX_INPUT_LENGTH = 30000;
+
+  let debugEnabled = true;
+
+  // Allow runtime debug toggle via storage
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.get('ai2tab_debug', data => {
+        if (data.ai2tab_debug === false) debugEnabled = false;
+      });
+    }
+  } catch (_) { /* not in extension context */ }
 
   function log(...args) {
-    if (DEBUG) {
+    if (debugEnabled) {
       console.log('[AI2tab]', new Date().toISOString(), ...args);
     }
   }
@@ -57,7 +69,7 @@ window.TabPluginUtils = (function() {
     return result;
   }
 
-  function deepQuerySelector(selector, root = document) {
+  function deepQuerySelector(selector, root = document, depth = MAX_SHADOW_DEPTH) {
     try {
       const element = root.querySelector(selector);
       if (element) return element;
@@ -65,27 +77,31 @@ window.TabPluginUtils = (function() {
       return null;
     }
 
+    if (depth <= 0) return null;
+
     const allElements = root.querySelectorAll ? root.querySelectorAll('*') : [];
     for (const host of allElements) {
       if (host.shadowRoot) {
-        const found = deepQuerySelector(selector, host.shadowRoot);
+        const found = deepQuerySelector(selector, host.shadowRoot, depth - 1);
         if (found) return found;
       }
     }
     return null;
   }
 
-  function deepQuerySelectorAll(selector, root = document, results = []) {
+  function deepQuerySelectorAll(selector, root = document, results = [], depth = MAX_SHADOW_DEPTH) {
     try {
       results.push(...root.querySelectorAll(selector));
     } catch (err) {
       return results;
     }
 
+    if (depth <= 0) return results;
+
     const allElements = root.querySelectorAll ? root.querySelectorAll('*') : [];
     for (const host of allElements) {
       if (host.shadowRoot) {
-        deepQuerySelectorAll(selector, host.shadowRoot, results);
+        deepQuerySelectorAll(selector, host.shadowRoot, results, depth - 1);
       }
     }
     return results;
@@ -146,10 +162,10 @@ window.TabPluginUtils = (function() {
     try {
       element.dispatchEvent(new view.InputEvent('input', {
         bubbles: true,
-      cancelable: true,
-      composed: true,
-      inputType: 'insertReplacementText',
-    }));
+        cancelable: true,
+        composed: true,
+        inputType: 'insertReplacementText',
+      }));
     } catch (err) {
       element.dispatchEvent(new view.Event('input', { bubbles: true, composed: true }));
     }
@@ -208,24 +224,29 @@ window.TabPluginUtils = (function() {
     return true;
   }
 
-  function setInput(element, value) {
-    if (!element) return false;
+  // ── Input strategy: reactNativeSetter (Qwen, Kimi) ──
+  // Uses native property setter to clear then set value, dispatches value events.
+  function setInputReactNativeSetter(element, value) {
     const view = getElementWindow(element);
-    const siteName = element.dataset.ai2tabSite || '';
     element.focus();
 
-    if (siteName === '千问/Qwen') {
-      if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
-        setTextControlValue(element, '');
-        setTextControlValue(element, value);
-        dispatchValueEvents(element);
-        return true;
-      }
-
-      return replaceEditableText(element, value);
+    if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
+      setTextControlValue(element, '');
+      setTextControlValue(element, value);
+      dispatchValueEvents(element);
+      return true;
     }
 
-    if (siteName === '豆包' && (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT')) {
+    return replaceEditableText(element, value);
+  }
+
+  // ── Input strategy: clearThenInput (Doubao) ──
+  // Clears via native setter with input events, then sets with composed input event.
+  function setInputClearThenInput(element, value) {
+    const view = getElementWindow(element);
+    element.focus();
+
+    if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
       const proto = element.tagName === 'TEXTAREA' ? view.HTMLTextAreaElement.prototype : view.HTMLInputElement.prototype;
       const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
       if (setter) setter.call(element, '');
@@ -248,16 +269,14 @@ window.TabPluginUtils = (function() {
       return true;
     }
 
-    if (siteName === 'Kimi') {
-      if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
-        setTextControlValue(element, '');
-        setTextControlValue(element, value);
-        dispatchValueEvents(element);
-        return true;
-      }
+    return replaceEditableText(element, value);
+  }
 
-      return replaceEditableText(element, value);
-    }
+  // ── Input strategy: default (ChatGPT, Gemini, Grok) ──
+  function setInputDefault(element, value) {
+    const view = getElementWindow(element);
+    const doc = element.ownerDocument || document;
+    element.focus();
 
     if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
       const proto = element.tagName === 'TEXTAREA' ? view.HTMLTextAreaElement.prototype : view.HTMLInputElement.prototype;
@@ -266,8 +285,8 @@ window.TabPluginUtils = (function() {
       else element.value = value;
       dispatchInputEvents(element, value);
     } else {
-      const selection = window.getSelection();
-      const range = document.createRange();
+      const selection = view.getSelection();
+      const range = doc.createRange();
       range.selectNodeContents(element);
       selection.removeAllRanges();
       selection.addRange(range);
@@ -275,8 +294,10 @@ window.TabPluginUtils = (function() {
       pasteIntoEditable(element, value);
       if ((element.textContent || '').trim() !== value.trim()) {
         element.focus();
-        document.execCommand('selectAll', false, null);
-        const inserted = document.execCommand('insertText', false, value);
+        range.selectNodeContents(element);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        const inserted = doc.execCommand('insertText', false, value);
         if (!inserted || !(element.textContent || '').includes(value)) {
           element.textContent = value;
         }
@@ -287,11 +308,148 @@ window.TabPluginUtils = (function() {
 
     const currentText = element.value || element.textContent || '';
     if (!currentText.includes(value)) {
-      document.execCommand('selectAll', false, null);
-      document.execCommand('insertText', false, value);
+      if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
+        const proto = element.tagName === 'TEXTAREA' ? view.HTMLTextAreaElement.prototype : view.HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+        if (setter) setter.call(element, value);
+        else element.value = value;
+      } else {
+        element.textContent = value;
+      }
       dispatchInputEvents(element, value);
     }
     return true;
+  }
+
+  // ── Input strategy: geminiEditable (Gemini contenteditable + Quill.js) ──
+  // Gemini uses a contenteditable div backed by Quill.js inside a web component.
+  // We must dispatch beforeinput to notify the framework, then use execCommand
+  // or clipboard paste, and finally fire input events for state sync.
+  function setInputGeminiEditable(element, value) {
+    const view = getElementWindow(element);
+    const doc = element.ownerDocument || document;
+    element.focus();
+
+    // For textarea/input (unlikely in Gemini but safe fallback)
+    if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
+      setTextControlValue(element, '');
+      setTextControlValue(element, value);
+      dispatchInputEvents(element, value);
+      return true;
+    }
+
+    // Step 1: Select all existing content
+    try {
+      const selection = view.getSelection();
+      const range = doc.createRange();
+      range.selectNodeContents(element);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } catch (err) {
+      log('Gemini: selection setup failed:', err.message);
+    }
+
+    // Step 2: Notify framework via beforeinput
+    try {
+      element.dispatchEvent(new view.InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        inputType: 'insertReplacementText',
+        data: value,
+      }));
+    } catch (_) {}
+
+    // Step 3: Try clipboard paste first (most compatible with Quill.js)
+    let pasted = false;
+    try {
+      const data = new view.DataTransfer();
+      data.setData('text/plain', value);
+      const pasteEvent = new view.ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clipboardData: data,
+      });
+      element.dispatchEvent(pasteEvent);
+      if (pasteEvent.defaultPrevented) {
+        pasted = true;
+      }
+    } catch (err) {
+      log('Gemini: clipboard paste skipped:', err.message);
+    }
+
+    // Step 4: If paste didn't work, try execCommand
+    if (!pasted || !(element.textContent || '').includes(value.slice(0, 20))) {
+      try {
+        const selection = view.getSelection();
+        const range = doc.createRange();
+        range.selectNodeContents(element);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        const inserted = doc.execCommand('insertText', false, value);
+        if (inserted && (element.textContent || '').includes(value.slice(0, 20))) {
+          pasted = true;
+        }
+      } catch (err) {
+        log('Gemini: execCommand insertText failed:', err.message);
+      }
+    }
+
+    // Step 5: Last resort — direct textContent assignment
+    if (!(element.textContent || '').includes(value.slice(0, 20))) {
+      // Clear existing child nodes first
+      while (element.firstChild) {
+        element.removeChild(element.firstChild);
+      }
+      // Insert as a paragraph element to match Quill's expected structure
+      const p = doc.createElement('p');
+      p.textContent = value;
+      element.appendChild(p);
+    }
+
+    // Step 6: Fire input events to trigger framework state update
+    try {
+      element.dispatchEvent(new view.InputEvent('input', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        inputType: 'insertText',
+        data: value,
+      }));
+    } catch (_) {
+      element.dispatchEvent(new view.Event('input', { bubbles: true, composed: true }));
+    }
+    element.dispatchEvent(new view.Event('change', { bubbles: true, composed: true }));
+    element.dispatchEvent(new view.CompositionEvent('compositionend', { bubbles: true, composed: true, data: value }));
+
+    return true;
+  }
+
+  const INPUT_STRATEGIES = {
+    reactNativeSetter: setInputReactNativeSetter,
+    clearThenInput: setInputClearThenInput,
+    geminiEditable: setInputGeminiEditable,
+    default: setInputDefault,
+  };
+
+  /**
+   * Set the value of an input element using a platform-specific strategy.
+   * @param {HTMLElement} element - The input element
+   * @param {string} value - The value to set
+   * @param {string} [strategy='default'] - One of 'default', 'reactNativeSetter', 'clearThenInput'
+   */
+  function setInput(element, value, strategy = 'default') {
+    if (!element) return false;
+
+    const strategyFn = INPUT_STRATEGIES[strategy];
+    if (strategyFn) {
+      const result = strategyFn(element, value);
+      // If strategy returned null (e.g. clearThenInput for contenteditable), fall through to default
+      if (result !== null) return result;
+    }
+
+    return setInputDefault(element, value);
   }
 
   function clearInput(element) {
@@ -350,11 +508,25 @@ window.TabPluginUtils = (function() {
   function clickEl(element) {
     if (!element) return false;
     try {
-      element.scrollIntoView({ block: 'center', inline: 'center' });
-      element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
-      element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-      element.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true }));
-      element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+      element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      const rect = element.getBoundingClientRect();
+      const clientX = rect.left + rect.width / 2;
+      const clientY = rect.top + rect.height / 2;
+      const base = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX,
+        clientY,
+        screenX: window.screenX + clientX,
+        screenY: window.screenY + clientY,
+        button: 0,
+        buttons: 1,
+      };
+      element.dispatchEvent(new PointerEvent('pointerdown', { ...base, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+      element.dispatchEvent(new MouseEvent('mousedown', base));
+      element.dispatchEvent(new PointerEvent('pointerup', { ...base, buttons: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+      element.dispatchEvent(new MouseEvent('mouseup', { ...base, buttons: 0 }));
       element.click();
       return true;
     } catch (err) {
@@ -395,6 +567,7 @@ window.TabPluginUtils = (function() {
 
   return {
     version: UTILS_VERSION,
+    MAX_INPUT_LENGTH,
     log,
     error,
     delay,

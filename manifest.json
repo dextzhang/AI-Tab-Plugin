@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI2tab",
-  "version": "3.0.0",
+  "version": "3.2.0",
   "description": "在一个弹窗里把提示词发送到多个已打开的 AI 网页。",
   "permissions": [
     "tabs",
@@ -10,10 +10,10 @@
     "storage"
   ],
   "host_permissions": [
-    "*://chat.openai.com/*",
-    "*://*.chat.openai.com/*",
     "*://chatgpt.com/*",
     "*://*.chatgpt.com/*",
+    "*://chat.openai.com/*",
+    "*://*.chat.openai.com/*",
     "*://gemini.google.com/*",
     "*://*.gemini.google.com/*",
     "*://x.ai/*",
@@ -22,8 +22,6 @@
     "*://*.grok.com/*",
     "*://x.com/i/grok*",
     "*://x.com/grok*",
-    "*://*.x.com/i/grok*",
-    "*://*.x.com/grok*",
     "*://tongyi.aliyun.com/*",
     "*://*.tongyi.aliyun.com/*",
     "*://qianwen.aliyun.com/*",
@@ -33,7 +31,6 @@
     "*://qwen.ai/*",
     "*://*.qwen.ai/*",
     "*://doubao.com/*",
-    "*://www.doubao.com/*",
     "*://*.doubao.com/*",
     "*://kimi.moonshot.cn/*",
     "*://*.kimi.moonshot.cn/*",

@@ -4,6 +4,25 @@ const SEND_LOGS_KEY = 'sendLogs';
 const MAX_SEND_LOGS = 10;
 const SITE = globalThis.AI2TAB_SITE_CONFIG;
 
+const TAB_RANK = {
+  ACTIVE_BONUS: 1e12,
+  NOT_DISCARDED_BONUS: 1e9,
+};
+
+const TIMING = {
+  AFTER_INJECT: 350,
+  AFTER_RELOAD: 1200,
+  AFTER_ACTIVATE: 900,
+  TAB_COMPLETE_DEFAULT: 12000,
+  TAB_COMPLETE_SEND: 18000,
+  TAB_COMPLETE_DISCARDED: 22000,
+  TAB_COMPLETE_FOREGROUND: 14000,
+  NAV_TIMEOUT: 18000,
+  DISCARDED_SETTLE: 1500,
+  NORMAL_SETTLE: 700,
+  MAX_TOTAL_RUN: 180000,
+};
+
 function getSite(tab) {
   return SITE.getSiteByUrl(tab.url || '');
 }
@@ -18,6 +37,32 @@ function isTargetTab(tab) {
 
 function isImageTab(tab) {
   return Boolean(tab.url && SITE.isImageSite(tab.url));
+}
+
+function getSiteId(tab) {
+  return getSite(tab)?.id || `unknown:${tab.id}`;
+}
+
+function tabRank(tab) {
+  let score = 0;
+  if (tab.active) score += TAB_RANK.ACTIVE_BONUS;
+  if (!tab.discarded) score += TAB_RANK.NOT_DISCARDED_BONUS;
+  score += Number(tab.lastAccessed || 0);
+  return score;
+}
+
+function dedupeTabsBySite(tabs) {
+  const bySite = new Map();
+
+  tabs.forEach(tab => {
+    const siteId = getSiteId(tab);
+    const current = bySite.get(siteId);
+    if (!current || tabRank(tab) > tabRank(current)) {
+      bySite.set(siteId, tab);
+    }
+  });
+
+  return Array.from(bySite.values());
 }
 
 function getFreshUrl(site, rawUrl) {
@@ -36,7 +81,7 @@ function isAlreadyFreshUrl(site, rawUrl) {
   });
 }
 
-function navigateTabAndWait(tabId, url, timeoutMs = 18000) {
+function navigateTabAndWait(tabId, url, timeoutMs = TIMING.NAV_TIMEOUT) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let timerId = null;
@@ -111,7 +156,7 @@ function isMessageChannelClosed(errorMessage) {
   return /message channel closed|asynchronous response|Receiving end does not exist|Could not establish connection/i.test(errorMessage || '');
 }
 
-function waitForTabComplete(tabId, timeoutMs = 12000) {
+function waitForTabComplete(tabId, timeoutMs = TIMING.TAB_COMPLETE_DEFAULT) {
   return new Promise(resolve => {
     let settled = false;
     let timerId = null;
@@ -144,7 +189,129 @@ function waitForTabComplete(tabId, timeoutMs = 12000) {
   });
 }
 
-function injectAndSendMessageOnce(tabId, message) {
+function reloadTab(tabId) {
+  return new Promise(resolve => {
+    chrome.tabs.reload(tabId, {}, () => {
+      resolve(!chrome.runtime.lastError);
+    });
+  });
+}
+
+function getTab(tabId, fallbackTab) {
+  return new Promise(resolve => {
+    chrome.tabs.get(tabId, refreshedTab => {
+      resolve(chrome.runtime.lastError ? fallbackTab : refreshedTab);
+    });
+  });
+}
+
+function getActiveTabsByWindow() {
+  return new Promise(resolve => {
+    chrome.tabs.query({ active: true }, tabs => {
+      if (chrome.runtime.lastError) {
+        resolve(new Map());
+        return;
+      }
+
+      resolve(new Map(tabs.map(tab => [tab.windowId, tab.id])));
+    });
+  });
+}
+
+function activateTab(tab) {
+  return new Promise(resolve => {
+    if (!tab?.id) {
+      resolve(tab);
+      return;
+    }
+
+    chrome.windows.update(tab.windowId, { focused: true }, () => {
+      chrome.tabs.update(tab.id, { active: true }, updatedTab => {
+        resolve(chrome.runtime.lastError ? tab : { ...tab, ...updatedTab });
+      });
+    });
+  });
+}
+
+async function restoreActiveTabs(activeTabsByWindow) {
+  for (const [windowId, tabId] of activeTabsByWindow.entries()) {
+    await new Promise(resolve => {
+      chrome.tabs.update(tabId, { active: true }, () => resolve());
+    });
+  }
+}
+
+async function ensureTabReadyQuietly(tab) {
+  let currentTab = tab;
+  if (tab.discarded || tab.status !== 'complete') {
+    await reloadTab(tab.id);
+    await waitForTabComplete(tab.id, tab.discarded ? TIMING.TAB_COMPLETE_DISCARDED : TIMING.TAB_COMPLETE_FOREGROUND);
+    await new Promise(resolve => setTimeout(resolve, tab.discarded ? TIMING.DISCARDED_SETTLE : TIMING.NORMAL_SETTLE));
+    currentTab = await getTab(tab.id, tab);
+  }
+
+  return currentTab;
+}
+
+function shouldQuietRetry(errorMessage) {
+  return isMessageChannelClosed(errorMessage) || /未找到输入框|input|textbox/i.test(errorMessage || '');
+}
+
+async function injectAndSendWithQuietRetry(tab, payload) {
+  try {
+    return await injectAndSendMessage(tab.id, payload);
+  } catch (error) {
+    if (!shouldQuietRetry(error.message)) {
+      throw error;
+    }
+
+    await reloadTab(tab.id);
+    await waitForTabComplete(tab.id, TIMING.TAB_COMPLETE_SEND);
+    await new Promise(resolve => setTimeout(resolve, TIMING.AFTER_RELOAD));
+    return injectAndSendMessage(tab.id, payload);
+  }
+}
+
+async function injectAndSendWithForegroundFallback(tab, payload) {
+  try {
+    return await injectAndSendWithQuietRetry(tab, payload);
+  } catch (quietError) {
+    if (!shouldQuietRetry(quietError.message)) {
+      throw quietError;
+    }
+
+    const originalActiveTabs = await getActiveTabsByWindow();
+    try {
+      const activeTab = await activateTab(tab);
+      await waitForTabComplete(activeTab.id, TIMING.TAB_COMPLETE_FOREGROUND);
+      await new Promise(resolve => setTimeout(resolve, TIMING.AFTER_ACTIVATE));
+      return await injectAndSendMessage(activeTab.id, payload);
+    } catch (foregroundError) {
+      foregroundError.message = `后台重试失败：${quietError.message}；前台兜底也失败：${foregroundError.message}`;
+      throw foregroundError;
+    } finally {
+      await restoreActiveTabs(originalActiveTabs);
+    }
+  }
+}
+
+function sendTabMessage(tabId, message) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, message, response => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      if (response?.success) {
+        resolve(response);
+      } else {
+        reject(new Error(response?.error || '页面没有确认发送成功'));
+      }
+    });
+  });
+}
+
+function injectScripts(tabId) {
   return new Promise((resolve, reject) => {
     chrome.scripting.executeScript({
       target: { tabId },
@@ -154,23 +321,18 @@ function injectAndSendMessageOnce(tabId, message) {
         reject(new Error(chrome.runtime.lastError.message));
         return;
       }
-
-      setTimeout(() => {
-        chrome.tabs.sendMessage(tabId, message, response => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-            return;
-          }
-
-          if (response?.success) {
-            resolve(response);
-          } else {
-            reject(new Error(response?.error || '页面没有确认发送成功'));
-          }
-        });
-      }, 350);
+      resolve();
     });
   });
+}
+
+async function injectAndSendMessageOnce(tabId, message) {
+  // Always refresh the injected adapter first. AI sites keep old content-script
+  // handlers alive across extension reloads, and sending to a stale handler can
+  // reintroduce old DOM/selection bugs.
+  await injectScripts(tabId);
+  await new Promise(resolve => setTimeout(resolve, TIMING.AFTER_INJECT));
+  return sendTabMessage(tabId, message);
 }
 
 async function injectAndSendMessage(tabId, message) {
@@ -182,38 +344,27 @@ async function injectAndSendMessage(tabId, message) {
     }
 
     await waitForTabComplete(tabId);
-    await new Promise(resolve => setTimeout(resolve, 1200));
+    await new Promise(resolve => setTimeout(resolve, TIMING.AFTER_RELOAD));
     return injectAndSendMessageOnce(tabId, message);
   }
 }
 
-function injectAndDiagnoseModes(tabId) {
-  return new Promise((resolve, reject) => {
-    chrome.scripting.executeScript({
-      target: { tabId },
-      files: ['ai-sites.js', 'utils.js', 'content.js'],
-    }, () => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-        return;
-      }
+async function injectAndDiagnoseModes(tabId) {
+  const message = { action: 'diagnoseModes' };
 
-      setTimeout(() => {
-        chrome.tabs.sendMessage(tabId, { action: 'diagnoseModes' }, response => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-            return;
-          }
+  try {
+    const response = await sendTabMessage(tabId, message);
+    return response.diagnosis;
+  } catch (pingError) {
+    if (!isMessageChannelClosed(pingError.message)) {
+      throw pingError;
+    }
+  }
 
-          if (response?.success) {
-            resolve(response.diagnosis);
-          } else {
-            reject(new Error(response?.error || '页面没有返回模式诊断结果'));
-          }
-        });
-      }, 350);
-    });
-  });
+  await injectScripts(tabId);
+  await new Promise(resolve => setTimeout(resolve, TIMING.AFTER_INJECT));
+  const response = await sendTabMessage(tabId, message);
+  return response.diagnosis;
 }
 
 async function saveSendLog(log) {
@@ -226,30 +377,80 @@ async function saveSendLog(log) {
 
 async function runForTabs(targetTabs, payload, mode) {
   const details = [];
+  const limit = 2;
+  const queue = [...targetTabs];
 
-  await Promise.all(targetTabs.map(async tab => {
-    const siteName = getSiteName(tab);
-    const site = getSite(tab);
-    const sitePreference = site ? payload.preferences?.sites?.[site.id] : null;
-
-    if (sitePreference?.enabled === false) {
-      details.push({ site: siteName, ok: true, skipped: true, error: '已在发送设置中关闭', url: tab.url });
-      return;
-    }
-
+  // Helper to push progress updates to Popup if open
+  const reportProgress = (siteId, status, extra = {}) => {
     try {
-      const preparedTab = await prepareTabForSend(tab, mode);
-      await injectAndSendMessage(preparedTab.id, payload);
-      details.push({ site: siteName, ok: true, url: preparedTab.url || tab.url });
-    } catch (error) {
-      details.push({
-        site: siteName,
-        ok: false,
-        error: permissionHint(error.message, tab),
-        url: tab.url,
+      chrome.runtime.sendMessage({
+        action: 'ai2tabProgressUpdate',
+        siteId,
+        status, // 'waiting', 'preparing', 'sending', 'success', 'error', 'skipped'
+        ...extra
       });
+    } catch (_) {
+      // Ignored if popup is closed
     }
-  }));
+  };
+
+  // Pre-initialize status for all target tabs
+  targetTabs.forEach(tab => {
+    const site = getSite(tab);
+    if (site) {
+      const sitePreference = payload.preferences?.sites?.[site.id];
+      if (sitePreference?.enabled !== false) {
+        reportProgress(site.id, 'waiting');
+      }
+    }
+  });
+
+  const worker = async () => {
+    while (queue.length > 0) {
+      const tab = queue.shift();
+      const siteName = getSiteName(tab);
+      const site = getSite(tab);
+      if (!site) continue;
+      const siteId = site.id;
+      const sitePreference = payload.preferences?.sites?.[siteId];
+
+      if (sitePreference?.enabled === false) {
+        details.push({ site: siteName, ok: true, skipped: true, error: '已在发送设置中关闭', url: tab.url });
+        reportProgress(siteId, 'skipped', { error: '已关闭' });
+        continue;
+      }
+
+      try {
+        reportProgress(siteId, 'preparing', { detail: '重载并确认就绪...' });
+        const readyTab = await ensureTabReadyQuietly(tab);
+
+        reportProgress(siteId, 'preparing', { detail: '跳转或准备对话...' });
+        const preparedTab = await prepareTabForSend(readyTab, mode);
+        const finalTab = await ensureTabReadyQuietly(preparedTab);
+
+        reportProgress(siteId, 'sending', { detail: '注入脚本并写入...' });
+        await injectAndSendWithQuietRetry(finalTab, payload);
+
+        details.push({ site: siteName, ok: true, url: finalTab.url || preparedTab.url || tab.url });
+        reportProgress(siteId, 'success', { detail: '已成功发送' });
+      } catch (error) {
+        const errorMsg = permissionHint(error.message, tab);
+        details.push({
+          site: siteName,
+          ok: false,
+          error: errorMsg,
+          url: tab.url,
+        });
+        reportProgress(siteId, 'error', { error: errorMsg });
+      }
+    }
+  };
+
+  const workers = [];
+  for (let i = 0; i < Math.min(limit, targetTabs.length); i++) {
+    workers.push(worker());
+  }
+  await Promise.all(workers);
 
   details.sort((a, b) => a.site.localeCompare(b.site));
   return {
@@ -262,7 +463,7 @@ async function runPopupSend(message) {
   const tabs = await chrome.tabs.query({});
   const mode = message.mode === 'Image' ? 'Image' : 'Text';
   const preferences = message.preferences || {};
-  const targetTabs = (mode === 'Image' ? tabs.filter(isImageTab) : tabs.filter(isTargetTab))
+  const targetTabs = dedupeTabsBySite(mode === 'Image' ? tabs.filter(isImageTab) : tabs.filter(isTargetTab))
     .filter(tab => {
       const site = getSite(tab);
       return !site || preferences.sites?.[site.id]?.enabled !== false;
@@ -283,8 +484,8 @@ async function runPopupSend(message) {
   }
 
   const payload = mode === 'Image'
-    ? { action: 'generateImage', prompt: message.prompt, size: message.size, preferences }
-    : { action: 'sendMessage', content: message.content, preferences };
+    ? { action: 'generateImageV2', prompt: message.prompt, size: message.size, preferences }
+    : { action: 'sendMessageV2', content: message.content, preferences };
 
   const { successCount, details } = await runForTabs(targetTabs, payload, mode);
   return saveSendLog({
@@ -331,6 +532,7 @@ async function runModeDiagnosis() {
         ok: true,
         url: tab.url,
         note: formatDiagnosis(diagnosis),
+        diagnosis,
       });
     } catch (error) {
       details.push({
@@ -356,6 +558,13 @@ async function runModeDiagnosis() {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'diagnoseAI2tabModes') {
     runModeDiagnosis()
+      .then(log => sendResponse({ success: true, log }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (message.action === 'saveErrorLog') {
+    saveSendLog(message.log)
       .then(log => sendResponse({ success: true, log }))
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
