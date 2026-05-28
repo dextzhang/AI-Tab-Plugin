@@ -1,5 +1,5 @@
 window.TabPluginUtils = (function() {
-  const UTILS_VERSION = '3.2.0';
+  const UTILS_VERSION = '3.2.1';
   const MAX_SHADOW_DEPTH = 5;
   const MAX_INPUT_LENGTH = 30000;
 
@@ -398,14 +398,22 @@ window.TabPluginUtils = (function() {
 
     // Step 5: Last resort — direct textContent assignment
     if (!(element.textContent || '').includes(value.slice(0, 20))) {
-      // Clear existing child nodes first
-      while (element.firstChild) {
-        element.removeChild(element.firstChild);
+      const firstP = element.querySelector('p');
+      if (firstP) {
+        firstP.textContent = value;
+        // 移除其他多余的段落，以防止重复
+        element.querySelectorAll('p').forEach((p, idx) => {
+          if (idx > 0) p.remove();
+        });
+      } else {
+        while (element.firstChild) {
+          element.removeChild(element.firstChild);
+        }
+        // Insert as a paragraph element to match Quill's expected structure
+        const p = doc.createElement('p');
+        p.textContent = value;
+        element.appendChild(p);
       }
-      // Insert as a paragraph element to match Quill's expected structure
-      const p = doc.createElement('p');
-      p.textContent = value;
-      element.appendChild(p);
     }
 
     // Step 6: Fire input events to trigger framework state update
@@ -463,16 +471,29 @@ window.TabPluginUtils = (function() {
       if (setter) setter.call(element, '');
       else element.value = '';
     } else {
-      element.textContent = '';
+      let cleared = false;
       try {
         const selection = view.getSelection();
         const range = element.ownerDocument.createRange();
         range.selectNodeContents(element);
         selection.removeAllRanges();
         selection.addRange(range);
-        element.ownerDocument.execCommand('delete', false, null);
+        cleared = element.ownerDocument.execCommand('delete', false, null);
       } catch (err) {
-        element.textContent = '';
+        log('clearInput execCommand failed:', err.message);
+      }
+
+      if (!cleared || (element.textContent || '').trim() !== '') {
+        // Fallback: 避免直接清空整个 textContent 破坏 contenteditable 的富文本框架
+        const firstP = element.querySelector('p');
+        if (firstP) {
+          firstP.innerHTML = '<br>';
+          element.querySelectorAll('p').forEach((p, idx) => {
+            if (idx > 0) p.remove();
+          });
+        } else {
+          element.innerHTML = '<p><br></p>';
+        }
       }
     }
 
