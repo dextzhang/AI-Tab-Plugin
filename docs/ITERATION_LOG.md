@@ -1,8 +1,9 @@
 # AI2tab Iteration Log
 
-## 2026-05-28 v3.2.1 修复 Gemini/contenteditable 状态损坏问题
+## 2026-05-28 v3.2.1 修复 Gemini/contenteditable 状态损坏与事件极简化
 
 - **修复 contenteditable 暴力清除 Bug**：在 `utils.js` 中的 `clearInput` 函数里，移除了对非 input/textarea 元素的无条件 `element.textContent = ''` 强行清空。此粗暴操作会毁灭富文本编辑器（如 Quill）的内部 DOM 节点与数据绑定，从而导致 Gemini 输入框即使成功填充文本，在发送时也可能退回输入框、发送按钮失效，甚至导致手动输入时网页发生内部状态损坏报错。
+- **极简化 Gemini 输入逻辑防风控**：完全删除了原本模拟 ClipboardEvent (paste 粘贴)、beforeinput 等复杂合成事件的逻辑。这些伪造的非 Trusted 事件极易被 Google 的 WAF / 行为防刷脚本判定为机器人特征进而触发风控人机验证。现在仅使用原生的 `execCommand('insertText')` 配合基础 `input` 事件，在完全满足 Quill.js 状态同步的前提下，彻底回归最自然的浏览器行为。
 - **优化 Gemini 兜底输入逻辑**：在 `setInputGeminiEditable` 中作为最后防线直接赋值时，不再销毁并重建所有子节点，而是优先更新已存在的 `<p>` 标签，进一步避免了与 Quill 的 Virtual DOM 结构冲突。
 - **完善静默唤醒文档**：在相关文档中细化了状态损坏机制及对应的优雅降级策略。
 

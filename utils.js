@@ -338,7 +338,7 @@ window.TabPluginUtils = (function() {
       return true;
     }
 
-    // Step 1: Select all existing content
+    // 选中所有现有内容
     try {
       const selection = view.getSelection();
       const range = doc.createRange();
@@ -349,87 +349,31 @@ window.TabPluginUtils = (function() {
       log('Gemini: selection setup failed:', err.message);
     }
 
-    // Step 2: Notify framework via beforeinput
+    // 使用原生的 execCommand 写入文本（这是最自然、最不容易触发安全风控的行为）
+    let inserted = false;
     try {
-      element.dispatchEvent(new view.InputEvent('beforeinput', {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        inputType: 'insertReplacementText',
-        data: value,
-      }));
-    } catch (_) {}
-
-    // Step 3: Try clipboard paste first (most compatible with Quill.js)
-    let pasted = false;
-    try {
-      const data = new view.DataTransfer();
-      data.setData('text/plain', value);
-      const pasteEvent = new view.ClipboardEvent('paste', {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        clipboardData: data,
-      });
-      element.dispatchEvent(pasteEvent);
-      if (pasteEvent.defaultPrevented) {
-        pasted = true;
-      }
+      inserted = doc.execCommand('insertText', false, value);
     } catch (err) {
-      log('Gemini: clipboard paste skipped:', err.message);
+      log('Gemini: execCommand insertText failed:', err.message);
     }
 
-    // Step 4: If paste didn't work, try execCommand
-    if (!pasted || !(element.textContent || '').includes(value.slice(0, 20))) {
-      try {
-        const selection = view.getSelection();
-        const range = doc.createRange();
-        range.selectNodeContents(element);
-        selection.removeAllRanges();
-        selection.addRange(range);
-        const inserted = doc.execCommand('insertText', false, value);
-        if (inserted && (element.textContent || '').includes(value.slice(0, 20))) {
-          pasted = true;
-        }
-      } catch (err) {
-        log('Gemini: execCommand insertText failed:', err.message);
-      }
-    }
-
-    // Step 5: Last resort — direct textContent assignment
-    if (!(element.textContent || '').includes(value.slice(0, 20))) {
+    // 兜底温和赋值，避免破坏 Quill 结构
+    if (!inserted || !(element.textContent || '').includes(value.slice(0, 20))) {
       const firstP = element.querySelector('p');
       if (firstP) {
         firstP.textContent = value;
-        // 移除其他多余的段落，以防止重复
         element.querySelectorAll('p').forEach((p, idx) => {
           if (idx > 0) p.remove();
         });
       } else {
-        while (element.firstChild) {
-          element.removeChild(element.firstChild);
-        }
-        // Insert as a paragraph element to match Quill's expected structure
-        const p = doc.createElement('p');
-        p.textContent = value;
-        element.appendChild(p);
+        element.textContent = value;
       }
     }
 
-    // Step 6: Fire input events to trigger framework state update
+    // 触发标准的 input 事件，让富文本编辑器读取新数据即可
     try {
-      element.dispatchEvent(new view.InputEvent('input', {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        inputType: 'insertText',
-        data: value,
-      }));
-    } catch (_) {
       element.dispatchEvent(new view.Event('input', { bubbles: true, composed: true }));
-    }
-    element.dispatchEvent(new view.Event('change', { bubbles: true, composed: true }));
-    element.dispatchEvent(new view.CompositionEvent('compositionend', { bubbles: true, composed: true, data: value }));
+    } catch (_) {}
 
     return true;
   }
