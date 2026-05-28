@@ -79,8 +79,8 @@
       sendText: ['Send', '发送'],
       inputStrategy: 'geminiEditable',
       supportsImage: true,
-      preferEnter: true,
-      submitKeys: [{ key: 'Enter' }, { key: 'Enter', ctrlKey: true }],
+      preferEnter: false,
+      requireSendEffect: true,
       modeStrategy: 'menu',
       modeTriggerTexts: ['快速', '思考', 'Pro', 'Gemini'],
       modeOptions: [
