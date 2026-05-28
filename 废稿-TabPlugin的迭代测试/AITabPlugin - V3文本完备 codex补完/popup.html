@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>AI2tab</title>
+  <style>
+    :root {
+      --text: #172033;
+      --muted: #667085;
+      --surface: rgba(255, 255, 255, 0.68);
+      --surface-strong: rgba(255, 255, 255, 0.86);
+      --border: rgba(91, 109, 140, 0.24);
+      --accent: #2563eb;
+      --accent-strong: #1746c8;
+      --success: #138a4d;
+      --warning: #b7791f;
+      --error: #c2413d;
+      --shadow: 0 18px 48px rgba(31, 43, 68, 0.18);
+      --inner: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+      --blur: blur(22px) saturate(1.35);
+      --radius: 18px;
+      color-scheme: light;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 500px;
+      max-height: 690px;
+      margin: 0;
+      padding: 14px;
+      overflow-y: auto;
+      font-family: Inter, Arial, "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background: #f4f5f7;
+    }
+
+    .shell {
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.5)), var(--surface);
+      box-shadow: var(--shadow), var(--inner);
+      backdrop-filter: var(--blur);
+    }
+
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .badge {
+      flex: 0 0 auto;
+      padding: 6px 9px;
+      border: 1px solid rgba(37, 99, 235, 0.22);
+      border-radius: 999px;
+      color: #1746c8;
+      background: rgba(255, 255, 255, 0.62);
+      box-shadow: var(--inner);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .tab-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+      margin-bottom: 12px;
+      padding: 5px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.46);
+      box-shadow: var(--inner);
+      backdrop-filter: blur(16px);
+    }
+
+    .tab {
+      min-height: 36px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      color: #475467;
+      font-size: 13px;
+      font-weight: 700;
+      text-align: center;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 0.16s ease, background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .tab:hover {
+      background: rgba(255, 255, 255, 0.56);
+    }
+
+    .tab.active {
+      color: #fff;
+      background: linear-gradient(180deg, #3b82f6, #1d4ed8);
+      box-shadow: 0 8px 18px rgba(37, 99, 235, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+      transform: translateY(-1px);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    label {
+      display: block;
+      margin: 0 0 6px;
+      color: #344054;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .field {
+      margin-bottom: 10px;
+    }
+
+    textarea,
+    select {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--surface-strong);
+      color: #101828;
+      box-shadow: var(--inner);
+      font-family: inherit;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+    }
+
+    textarea:focus,
+    select:focus {
+      border-color: rgba(37, 99, 235, 0.64);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14), var(--inner);
+      background: rgba(255, 255, 255, 0.94);
+    }
+
+    textarea {
+      height: 122px;
+      padding: 11px;
+      resize: vertical;
+      line-height: 1.48;
+    }
+
+    select {
+      height: 38px;
+      padding: 7px 10px;
+    }
+
+    button {
+      min-height: 38px;
+      padding: 9px 13px;
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      border-radius: 14px;
+      background: linear-gradient(180deg, #3b82f6, #1d4ed8);
+      color: white;
+      box-shadow: 0 10px 22px rgba(37, 99, 235, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.36);
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease, filter 0.16s ease;
+    }
+
+    button:hover {
+      filter: saturate(1.05) brightness(1.02);
+      transform: translateY(-1px);
+      box-shadow: 0 13px 28px rgba(37, 99, 235, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button:focus-visible,
+    input:focus-visible {
+      outline: 3px solid rgba(37, 99, 235, 0.22);
+      outline-offset: 2px;
+    }
+
+    button:disabled {
+      opacity: 0.62;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    button.full {
+      width: 100%;
+    }
+
+    button.secondary {
+      min-height: 30px;
+      padding: 6px 10px;
+      color: #344054;
+      background: rgba(255, 255, 255, 0.6);
+      box-shadow: var(--inner), 0 7px 16px rgba(40, 51, 72, 0.08);
+      font-size: 12px;
+    }
+
+    .status {
+      min-height: 18px;
+      margin: 10px 0 2px;
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      white-space: pre-wrap;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #344054;
+      background: rgba(255, 255, 255, 0.52);
+      box-shadow: var(--inner);
+    }
+
+    .status:empty {
+      display: none;
+    }
+
+    .status[data-type="success"] {
+      color: var(--success);
+      border-color: rgba(19, 138, 77, 0.24);
+    }
+
+    .status[data-type="error"] {
+      color: var(--error);
+      border-color: rgba(194, 65, 61, 0.24);
+    }
+
+    .status[data-type="info"] {
+      color: var(--accent-strong);
+      border-color: rgba(37, 99, 235, 0.22);
+    }
+
+    .panel {
+      margin-top: 14px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.42);
+      box-shadow: var(--inner);
+      backdrop-filter: blur(18px) saturate(1.2);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .panel-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex: 0 0 auto;
+    }
+
+    .site-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .site-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 1fr) 172px;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid rgba(91, 109, 140, 0.16);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.58);
+      box-shadow: var(--inner);
+    }
+
+    .site-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .site-toggle input {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent);
+    }
+
+    .mode-select {
+      height: 34px;
+      border-radius: 12px;
+      font-size: 12px;
+    }
+
+    .mode-select:disabled {
+      opacity: 0.55;
+    }
+
+    .history-item,
+    .log-item {
+      width: 100%;
+      margin-bottom: 8px;
+      padding: 10px;
+      border: 1px solid rgba(91, 109, 140, 0.18);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.7);
+      color: var(--text);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+      font-size: 12px;
+      text-align: left;
+    }
+
+    .history-item {
+      cursor: pointer;
+    }
+
+    .history-item:hover {
+      border-color: rgba(37, 99, 235, 0.32);
+      background: rgba(255, 255, 255, 0.88);
+    }
+
+    .history-content,
+    .log-content {
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      line-height: 1.45;
+    }
+
+    .muted {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .log-item.success {
+      border-left: 4px solid var(--success);
+    }
+
+    .log-item.error {
+      border-left: 4px solid var(--error);
+    }
+
+    .log-item.partial {
+      border-left: 4px solid var(--warning);
+    }
+
+    .log-summary {
+      font-weight: 800;
+      line-height: 1.45;
+    }
+
+    .log-detail {
+      margin-top: 6px;
+      white-space: pre-wrap;
+      color: #344054;
+      line-height: 1.45;
+    }
+
+    .empty {
+      padding: 14px;
+      color: #7b8798;
+      font-size: 12px;
+      text-align: center;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        transition: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <h1>AI2tab</h1>
+        <p class="subtitle">把同一条提示词发送到多个已打开并登录的 AI 页面。</p>
+      </div>
+      <div class="badge">v3 重构</div>
+    </header>
+
+    <div class="tab-container" role="tablist">
+      <div class="tab active" data-tab="chat" role="tab" aria-selected="true">文本</div>
+      <div class="tab" data-tab="image" role="tab" aria-selected="false">图片</div>
+    </div>
+
+    <section class="tab-content active" id="chat-tab">
+      <div class="field">
+        <label for="message">提示词</label>
+        <textarea id="message" placeholder="输入要发送到多个 AI 页面的内容"></textarea>
+      </div>
+      <button id="sendBtn" class="full">发送文本</button>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">发送目标与模式</div>
+          <div class="panel-actions">
+            <button id="diagnoseModesBtn" class="secondary">诊断模式控件</button>
+            <button id="resetPrefsBtn" class="secondary">恢复默认</button>
+          </div>
+        </div>
+        <div id="siteSettings" class="site-grid"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">最近提示词</div>
+          <button id="clearHistoryBtn" class="secondary">清空</button>
+        </div>
+        <div id="historyList"></div>
+      </div>
+    </section>
+
+    <section class="tab-content" id="image-tab">
+      <div class="field">
+        <label for="imagePrompt">图片提示词</label>
+        <textarea id="imagePrompt" placeholder="描述你想生成的图片"></textarea>
+      </div>
+      <div class="field">
+        <label for="imageSize">图片尺寸</label>
+        <select id="imageSize">
+          <option value="1024x1024">1024 x 1024</option>
+          <option value="1024x1536">1024 x 1536</option>
+          <option value="1536x1024">1536 x 1024</option>
+        </select>
+      </div>
+      <button id="generateImageBtn" class="full">发送图片请求</button>
+    </section>
+
+    <div id="status" class="status" aria-live="polite"></div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">发送日志</div>
+        <button id="clearLogsBtn" class="secondary">清空日志</button>
+      </div>
+      <div id="sendLogList"></div>
+    </div>
+  </main>
+
+  <script src="ai-sites.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

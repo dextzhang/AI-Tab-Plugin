@@ -518,6 +518,37 @@ function formatDiagnosis(diagnosis) {
   return lines.join('\n');
 }
 
+async function runActivateAndNewChat(message) {
+  const tabs = await chrome.tabs.query({});
+  const preferences = message.preferences || {};
+  const targetTabs = dedupeTabsBySite(tabs.filter(isTargetTab)).filter(tab => {
+    const site = getSite(tab);
+    return site && preferences.sites?.[site.id]?.enabled !== false;
+  });
+
+  if (targetTabs.length === 0) {
+    return { count: 0 };
+  }
+
+  // Navigate all target tabs to their fresh URLs to wake them up
+  await Promise.all(targetTabs.map(async tab => {
+    const site = getSite(tab);
+    if (!site) return;
+    const freshUrl = getFreshUrl(site, tab.url);
+    try {
+      await navigateTabAndWait(tab.id, freshUrl);
+    } catch (error) {
+      // Ignore individual timeout errors, proceed with what we have
+      console.warn(`Wakeup timeout for ${site.name}: ${error.message}`);
+    }
+  }));
+
+  // Wait a short moment for SPAs to initialize their DOM
+  await new Promise(resolve => setTimeout(resolve, 800));
+
+  return { count: targetTabs.length };
+}
+
 async function runModeDiagnosis() {
   const tabs = await chrome.tabs.query({});
   const targetTabs = tabs.filter(isTargetTab);
@@ -556,6 +587,13 @@ async function runModeDiagnosis() {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'activateAndNewChat') {
+    runActivateAndNewChat(message)
+      .then(result => sendResponse({ success: true, count: result.count }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
   if (message.action === 'diagnoseAI2tabModes') {
     runModeDiagnosis()
       .then(log => sendResponse({ success: true, log }))

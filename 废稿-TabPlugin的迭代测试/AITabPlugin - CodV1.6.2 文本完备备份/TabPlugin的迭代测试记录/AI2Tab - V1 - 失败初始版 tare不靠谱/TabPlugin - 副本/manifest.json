@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "AI2tab",
+  "version": "1.0",
+  "description": "在一个页面发送消息到多个AI模型网页",
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://chat.openai.com/*",
+    "*://gemini.google.com/*",
+    "*://x.ai/*",
+    "*://qianwen.baidu.com/*",
+    "*://www.doubao.com/*",
+    "*://kimi.moonshot.cn/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
