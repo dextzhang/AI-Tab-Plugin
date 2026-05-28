@@ -176,7 +176,7 @@
   }
 
   async function findInput(platform) {
-    const input = await U.waitForVisible(() => U.findVisible(platform.selectors.input), 20000, 500);
+    const input = await U.waitForVisible(() => U.findVisible(platform.selectors.input), 9000, 200);
     if (!input) {
       throw new Error('未找到输入框');
     }
